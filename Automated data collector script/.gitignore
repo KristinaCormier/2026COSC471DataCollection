@@ -20,6 +20,7 @@ env/
 .env
 .env.*
 *.env
+.collector_env
 
 # --------------------
 # Logs
