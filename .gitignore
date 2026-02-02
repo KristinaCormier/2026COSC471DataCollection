@@ -6,6 +6,7 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
+.Python
 
 # --------------------
 # Virtual Environment
@@ -13,6 +14,7 @@ __pycache__/
 .venv/
 venv/
 env/
+ENV/
 
 # --------------------
 # Environment / Secrets
@@ -20,6 +22,17 @@ env/
 .env
 .env.*
 *.env
+
+# --------------------
+# Testing
+# --------------------
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+.tox/
+*.cover
+.hypothesis/
 
 # --------------------
 # Logs
@@ -36,6 +49,7 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
+*~
 
 # --------------------
 # Temporary files
@@ -54,3 +68,11 @@ Thumbs.db
 build/
 dist/
 *.egg-info/
+.eggs/
+
+# --------------------
+# Database
+# --------------------
+*.db
+*.sqlite
+*.sqlite3
