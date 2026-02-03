@@ -1,8 +1,12 @@
+import sys
+from pathlib import Path
 import datetime as dt
 from zoneinfo import ZoneInfo
 
-from test_error_logs import log_fetch_csv
-import test_error_logs as mod
+# --- make src/ importable ---
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+
+import auto_data_collection as mod  # src/test_error_logs.py
 
 
 def _setup_isolated_cwd(tmp_path, monkeypatch):
@@ -14,7 +18,7 @@ def _setup_isolated_cwd(tmp_path, monkeypatch):
 
 
 def _read_lines(tmp_path):
-    log_file = tmp_path / "logs" / "fetch_log.csv"
+    log_file = tmp_path / "logs" / "fetch_data_log.csv"
     return log_file.read_text(encoding="utf-8").splitlines()
 
 
@@ -24,7 +28,7 @@ def test_log_fetch_csv_creates_file_and_writes_header_and_row(tmp_path, monkeypa
     start = dt.datetime(2026, 2, 3, 9, 0, tzinfo=TZ)
     end   = dt.datetime(2026, 2, 3, 9, 55, tzinfo=TZ)
 
-    log_fetch_csv(
+    mod.log_fetch_csv(
         symbol="AAPL",
         start=start,
         end=end,
@@ -32,7 +36,7 @@ def test_log_fetch_csv_creates_file_and_writes_header_and_row(tmp_path, monkeypa
         day_to="2026-02-03",
         api_rows=200,
         filtered_rows=12,
-        csv_path="logs/fetch_log.csv",
+        csv_path="logs/fetch_data_log.csv",
     )
 
     lines = _read_lines(tmp_path)
@@ -48,7 +52,7 @@ def test_log_fetch_csv_appends_second_row_without_duplicate_header(tmp_path, mon
     start = dt.datetime(2026, 2, 3, 10, 0, tzinfo=TZ)
     end   = dt.datetime(2026, 2, 3, 10, 55, tzinfo=TZ)
 
-    log_fetch_csv(
+    mod.log_fetch_csv(
         symbol="MSFT",
         start=start,
         end=end,
@@ -56,9 +60,9 @@ def test_log_fetch_csv_appends_second_row_without_duplicate_header(tmp_path, mon
         day_to="2026-02-03",
         api_rows=150,
         filtered_rows=10,
-        csv_path="logs/fetch_log.csv",
+        csv_path="logs/fetch_data_log.csv",
     )
-    log_fetch_csv(
+    mod.log_fetch_csv(
         symbol="MSFT",
         start=start,
         end=end,
@@ -66,7 +70,7 @@ def test_log_fetch_csv_appends_second_row_without_duplicate_header(tmp_path, mon
         day_to="2026-02-03",
         api_rows=151,
         filtered_rows=11,
-        csv_path="logs/fetch_log.csv",
+        csv_path="logs/fetch_data_log.csv",
     )
 
     lines = _read_lines(tmp_path)
@@ -85,7 +89,7 @@ def test_log_fetch_csv_creates_logs_directory_if_missing(tmp_path, monkeypatch):
     start = dt.datetime(2026, 2, 3, 11, 0, tzinfo=TZ)
     end   = dt.datetime(2026, 2, 3, 11, 5, tzinfo=TZ)
 
-    log_fetch_csv(
+    mod.log_fetch_csv(
         symbol="TSLA",
         start=start,
         end=end,
@@ -93,11 +97,11 @@ def test_log_fetch_csv_creates_logs_directory_if_missing(tmp_path, monkeypatch):
         day_to="2026-02-03",
         api_rows=1,
         filtered_rows=1,
-        csv_path="logs/fetch_log.csv",
+        csv_path="logs/fetch_data_log.csv",
     )
 
     assert (tmp_path / "logs").is_dir()
-    assert (tmp_path / "logs" / "fetch_log.csv").exists()
+    assert (tmp_path / "logs" / "fetch_data_log.csv").exists()
 
 
 def test_log_fetch_csv_run_ts_market_is_iso_and_has_tz_offset(tmp_path, monkeypatch):
@@ -106,7 +110,7 @@ def test_log_fetch_csv_run_ts_market_is_iso_and_has_tz_offset(tmp_path, monkeypa
     start = dt.datetime(2026, 2, 3, 12, 0, tzinfo=TZ)
     end   = dt.datetime(2026, 2, 3, 12, 5, tzinfo=TZ)
 
-    log_fetch_csv(
+    mod.log_fetch_csv(
         symbol="NVDA",
         start=start,
         end=end,
@@ -114,7 +118,7 @@ def test_log_fetch_csv_run_ts_market_is_iso_and_has_tz_offset(tmp_path, monkeypa
         day_to="2026-02-03",
         api_rows=2,
         filtered_rows=2,
-        csv_path="logs/fetch_log.csv",
+        csv_path="logs/fetch_data_log.csv",
     )
 
     row = _read_lines(tmp_path)[1]
