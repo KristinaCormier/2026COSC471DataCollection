@@ -3,7 +3,11 @@
 # It should insert this data into postgres for each symbol provided
 # This script is designed to be executed every hour throughout every extended market day using a job scheduler 
 
-import os, json, datetime as dt, sys, re
+import os
+import json
+import datetime as dt
+import sys
+import re
 import requests
 from pathlib import Path
 # DB client
