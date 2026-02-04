@@ -10,7 +10,7 @@ import pytest
 from unittest.mock import MagicMock
 
 from src import auto_data_collection as collector
-from tests.conftest import FakeResponse, FakeConnection, FakeCursor
+from tests.conftest import FakeResponse, FakeConnection
 
 
 # Setup
