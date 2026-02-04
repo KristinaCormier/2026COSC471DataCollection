@@ -236,8 +236,6 @@ def main():
         print("error: API key is missing; ensure FMP_API_KEY is set", file=sys.stderr)
         sys.exit(1)
 
-    if end <= start:
-        end = start + dt.timedelta(minutes=5)
 
 
     print()
