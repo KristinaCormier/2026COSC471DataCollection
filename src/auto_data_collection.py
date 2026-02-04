@@ -157,17 +157,17 @@ def fetch_and_insert(conn, symbol: str, start: dt.datetime, end: dt.datetime):
         ts_exch = parse_api_time(ts_str)
         if start <= ts_exch < end:
             # grab all data fields from api 
-            open_val  = row.get("open")
-            high_val  = row.get("high")
-            low_val   = row.get("low")
-            close_val = row.get("close")
-            volumeVal = row.get("volume")
+            open_val   = row.get("open")
+            high_val   = row.get("high")
+            low_val    = row.get("low")
+            close_val  = row.get("close")
+            volume_val = row.get("volume")
             # require close price to exist 
             if close_val is None:
                 continue
 
             # append data to rows list 
-            rows.append((ts_exch, open_val, high_val, low_val, close_val, volumeVal))
+            rows.append((ts_exch, open_val, high_val, low_val, close_val, volume_val))
 
     rows.sort(key=lambda x: x[0])  # sort rows ascending by timestamp
 
