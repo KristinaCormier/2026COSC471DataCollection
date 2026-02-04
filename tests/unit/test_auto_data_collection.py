@@ -113,13 +113,6 @@ def test_fetch_and_insert_skips_out_of_range_rows(monkeypatch):
     monkeypatch.setattr(collector.requests, "get", lambda *args, **kwargs: FakeResponse(api_payload))
     monkeypatch.setattr(collector, "check_table_exists", lambda *args, **kwargs: None)
 
-    captured = {"rows": None}
-
-    def _fake_execute_values(cur, sql, rows, template=None):
-        captured["rows"] = rows
-
-    monkeypatch.setattr(collector, "execute_values", _fake_execute_values)
-
     conn = FakeConnection()
 
     # When: Fetching and inserting
@@ -127,7 +120,8 @@ def test_fetch_and_insert_skips_out_of_range_rows(monkeypatch):
 
     # Then: No rows should be inserted (¬Q observed, proving ¬P)
     assert inserted == 0
-    assert captured["rows"] is None
+    # No cursor should be created when no rows to insert
+    assert conn.commits == 0
 
 
 # Test 8. Test for fetch_and_insert(): missing close is excluded (Modus Tollens)
@@ -152,13 +146,6 @@ def test_fetch_and_insert_skips_missing_close(monkeypatch):
     monkeypatch.setattr(collector.requests, "get", lambda *args, **kwargs: FakeResponse(api_payload))
     monkeypatch.setattr(collector, "check_table_exists", lambda *args, **kwargs: None)
 
-    captured = {"rows": None}
-
-    def _fake_execute_values(cur, sql, rows, template=None):
-        captured["rows"] = rows
-
-    monkeypatch.setattr(collector, "execute_values", _fake_execute_values)
-
     conn = FakeConnection()
 
     # When: Fetching and inserting
@@ -166,7 +153,8 @@ def test_fetch_and_insert_skips_missing_close(monkeypatch):
 
     # Then: No rows should be inserted (¬Q observed, proving ¬P)
     assert inserted == 0
-    assert captured["rows"] is None
+    # No cursor should be created when no rows to insert
+    assert conn.commits == 0
 
 
 # Test 9. Test for fetch_and_insert(): inserts valid rows in ascending order
@@ -188,14 +176,6 @@ def test_fetch_and_insert_inserts_sorted_rows(monkeypatch):
     monkeypatch.setattr(collector.requests, "get", lambda *args, **kwargs: FakeResponse(api_payload))
     monkeypatch.setattr(collector, "check_table_exists", lambda *args, **kwargs: None)
 
-    captured = {"rows": None, "sql": None}
-
-    def _fake_execute_values(cur, sql, rows, template=None):
-        captured["rows"] = rows
-        captured["sql"] = sql
-
-    monkeypatch.setattr(collector, "execute_values", _fake_execute_values)
-
     conn = FakeConnection()
 
     # When: Fetching and inserting
@@ -203,8 +183,10 @@ def test_fetch_and_insert_inserts_sorted_rows(monkeypatch):
 
     # Then: Rows should be sorted ascending and inserted
     assert inserted == 2
-    assert [r[0].minute for r in captured["rows"]] == [5, 25]
-    assert "INSERT INTO market.aapl" in captured["sql"]
+    # Check the cursor that executed the insert
+    insert_cursor = conn.cursors[-1]
+    assert [r[0].minute for r in insert_cursor.executed_values] == [5, 25]
+    assert "INSERT INTO market.aapl" in insert_cursor.queries[-1]
 
 
 # Test 10. Test for fetch_and_insert(): missing date field is excluded (Modus Tollens)
@@ -229,13 +211,6 @@ def test_fetch_and_insert_skips_missing_date_field(monkeypatch):
     monkeypatch.setattr(collector.requests, "get", lambda *args, **kwargs: FakeResponse(api_payload))
     monkeypatch.setattr(collector, "check_table_exists", lambda *args, **kwargs: None)
 
-    captured = {"rows": None}
-
-    def _fake_execute_values(cur, sql, rows, template=None):
-        captured["rows"] = rows
-
-    monkeypatch.setattr(collector, "execute_values", _fake_execute_values)
-
     conn = FakeConnection()
 
     # When: Fetching and inserting
@@ -243,7 +218,8 @@ def test_fetch_and_insert_skips_missing_date_field(monkeypatch):
 
     # Then: No rows should be inserted (¬Q observed, proving ¬P)
     assert inserted == 0
-    assert captured["rows"] is None
+    # No cursor should be created when no rows to insert
+    assert conn.commits == 0
 
 
 # Test 11. Test for fetch_and_insert(): empty API response results in no inserts (Modus Tollens)
@@ -266,13 +242,6 @@ def test_fetch_and_insert_handles_empty_api_response(monkeypatch):
     monkeypatch.setattr(collector.requests, "get", lambda *args, **kwargs: FakeResponse(api_payload))
     monkeypatch.setattr(collector, "check_table_exists", lambda *args, **kwargs: None)
 
-    captured = {"rows": None}
-
-    def _fake_execute_values(cur, sql, rows, template=None):
-        captured["rows"] = rows
-
-    monkeypatch.setattr(collector, "execute_values", _fake_execute_values)
-
     conn = FakeConnection()
 
     # When: Fetching and inserting
@@ -280,7 +249,8 @@ def test_fetch_and_insert_handles_empty_api_response(monkeypatch):
 
     # Then: No rows should be inserted (¬Q observed, proving ¬P)
     assert inserted == 0
-    assert captured["rows"] is None
+    # No cursor should be created when no rows to insert
+    assert conn.commits == 0
 
 
 # Test 12. Test for fetch_and_insert(): all invalid rows result in no commit (Modus Tollens)
@@ -307,22 +277,15 @@ def test_fetch_and_insert_no_commit_when_all_invalid(monkeypatch):
     monkeypatch.setattr(collector.requests, "get", lambda *args, **kwargs: FakeResponse(api_payload))
     monkeypatch.setattr(collector, "check_table_exists", lambda *args, **kwargs: None)
 
-    captured = {"rows": None, "execute_called": False}
-
-    def _fake_execute_values(cur, sql, rows, template=None):
-        captured["rows"] = rows
-        captured["execute_called"] = True
-
-    monkeypatch.setattr(collector, "execute_values", _fake_execute_values)
-
     conn = FakeConnection()
 
     # When: Fetching and inserting
     inserted = collector.fetch_and_insert(conn, "AAPL", start, end)
 
-    # Then: No rows inserted and execute_values never called (¬Q observed, proving ¬P)
+    # Then: No rows inserted and executemany never called (¬Q observed, proving ¬P)
     assert inserted == 0
-    assert captured["execute_called"] is False
+    # No commit should happen when no rows to insert
+    assert conn.commits == 0
 
 # Teardown
 

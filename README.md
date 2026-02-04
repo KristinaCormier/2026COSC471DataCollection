@@ -21,7 +21,7 @@ Python 3.9+
 
 Packages:
 
-pip install requests psycopg2-binary
+pip install requests psycopg[binary]
 
 Configuration (Environment Variables)
 API
