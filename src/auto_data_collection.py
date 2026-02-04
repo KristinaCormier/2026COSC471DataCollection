@@ -279,8 +279,8 @@ def main():
 
     try:
         conn.close() # close db connection 
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[warning] failed to close database connection: {e}", file=sys.stderr)
 
     print()
     print(f" [done] total rows ingested: {total}")
