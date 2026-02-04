@@ -14,7 +14,7 @@ from pathlib import Path
 import psycopg2
 from psycopg2.extras import execute_values
 
-# load in enviornment vars 
+# load in environment vars 
 API_KEY        = os.environ.get("FMP_API_KEY", "")
 SYMBOLS        = os.environ.get("SYMBOLS", "AAPL").split(",")
 MARKET_TZ      = os.environ.get("MARKET_TZ", "America/New_York")
