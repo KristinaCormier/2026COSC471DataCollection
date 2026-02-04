@@ -29,11 +29,6 @@ PGPASSWORD = os.environ.get("PGPASSWORD", "")
 
 BASE_URL = "https://financialmodelingprep.com/api/v3/historical-chart/5min/{symbol}"
 
-#moved to main()
-#if not API_KEY:
- #   print("error: API key is missing; ensure FMP_API_KEY is set", file=sys.stderr)
-  #  sys.exit(1)
-
 # cleanup symbols
 SYMBOLS = [s.strip() for s in SYMBOLS if s.strip()]
 
