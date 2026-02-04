@@ -104,11 +104,7 @@ def test_main_successful_execution(mock_env_complete, mock_successful_api, monke
     def mock_db_connect():
         return mock_conn
     
-    def mock_execute_values(cur, sql, rows, template=None):
-        pass
-    
     monkeypatch.setattr(collector, "db_connect", mock_db_connect)
-    monkeypatch.setattr(collector, "execute_values", mock_execute_values)
     
     # When: Running main()
     collector.main()

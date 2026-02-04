@@ -114,6 +114,10 @@ class FakeCursor:
         self.queries.append(query)
         self.params.append(params)
 
+    def executemany(self, query, params_seq):
+        self.queries.append(query)
+        self.executed_values = list(params_seq)
+
     def fetchone(self):
         return (1,) if self.table_exists else None
 
@@ -149,8 +153,8 @@ class FakeConnection:
 
 @pytest.fixture(scope="function")
 def mock_pg_connection(monkeypatch):
-    """Mock psycopg2 connection for unit tests (no real DB required)."""
-    # This fixture replaces psycopg2.connect with an in-memory stub so tests
+    """Mock psycopg connection for unit tests (no real DB required)."""
+    # This fixture replaces psycopg.connect with an in-memory stub so tests
     # can exercise DB-related code paths (like insert/commit/close) without
     # requiring a running Postgres instance.
     fake_conn = FakeConnection()
@@ -158,7 +162,7 @@ def mock_pg_connection(monkeypatch):
     def _fake_connect(*args, **kwargs):
         return fake_conn
 
-    monkeypatch.setattr("psycopg2.connect", _fake_connect)
+    monkeypatch.setattr("psycopg.connect", _fake_connect)
     return fake_conn
 
 
@@ -181,13 +185,13 @@ def fake_api_response(monkeypatch):
 
 @pytest.fixture(scope="function")
 def mock_execute_values(monkeypatch):
-    """Mock execute_values to track SQL execution without real DB."""
+    """Mock executemany to track SQL execution without real DB."""
     captured = {"rows": None, "sql": None, "called": False}
 
-    def _fake_execute_values(cur, sql, rows, template=None):
-        captured["rows"] = rows
+    def _fake_executemany(self, sql, rows):
+        captured["rows"] = list(rows)
         captured["sql"] = sql
         captured["called"] = True
 
-    monkeypatch.setattr("psycopg2.extras.execute_values", _fake_execute_values)
+    monkeypatch.setattr("tests.conftest.FakeCursor.executemany", _fake_executemany)
     return captured

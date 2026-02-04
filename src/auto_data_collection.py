@@ -11,8 +11,7 @@ import re
 import requests
 from pathlib import Path
 # DB client
-import psycopg2
-from psycopg2.extras import execute_values
+import psycopg
 
 # load in environment vars 
 API_KEY        = os.environ.get("FMP_API_KEY", "")
@@ -57,7 +56,7 @@ def safe_table_name_for_symbol(sym: str) -> str:
     return f"market.{base}"
 
 def db_connect():
-    return psycopg2.connect(
+    return psycopg.connect(
         host=PGHOST,
         port=PGPORT,
         dbname=PGDATABASE,
@@ -199,7 +198,7 @@ def fetch_and_insert(conn, symbol: str, start: dt.datetime, end: dt.datetime):
     """
     # Execute sql query on postgres 
     with conn.cursor() as cur:
-        execute_values(cur, insert_sql, rows, template="(%s, %s, %s, %s, %s, %s)") 
+        cur.executemany(insert_sql.replace("VALUES %s", "VALUES (%s, %s, %s, %s, %s, %s)"), rows)
     conn.commit() 
 
     print(f"inserted/upserted {len(rows)} rows into {table}")
