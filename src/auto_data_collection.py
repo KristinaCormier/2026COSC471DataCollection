@@ -110,25 +110,24 @@ def log_fetch_csv(symbol: str, start: dt.datetime, end: dt.datetime, day_from: s
     Appends a single-line fetch log to a CSV file.
     Creates the file + header if it doesn't exist.
     """
-    log_dir = Path("logs")
-    log_dir.mkdir(parents=True, exist_ok=True)
-    log_file = log_dir / "fetch_data_log.csv"
+    # 1. Use the passed-in csv_path instead of hardcoding "logs"
+    log_file = Path(csv_path)
+    
+    # 2. Ensure the parent directory (e.g., "logs/") exists
+    log_file.parent.mkdir(parents=True, exist_ok=True)
 
     header = "run_ts_market,symbol,window_start,window_end,from_day,to_day,api_rows,filtered_rows\n"
     run_ts = dt.datetime.now(TZ).isoformat()
 
     line = f"{run_ts},{symbol},{start.isoformat()},{end.isoformat()},{day_from},{day_to},{api_rows},{filtered_rows}\n"
 
+# 3. Write header if new, then append the line
     if not log_file.exists():
         log_file.write_text(header, encoding="utf-8")
+    
     with log_file.open("a", encoding="utf-8") as f:
         f.write(line)
-
-    # optional console line so you can see where it went
-    print(f"fetch log appended: {log_file}")
-
-
-
+        
 #  API Fetch and insert into Postgres 
 
 def fetch_and_insert(conn, symbol: str, start: dt.datetime, end: dt.datetime):

@@ -1,6 +1,9 @@
 Market Database Setup Script
 Overview
 
+#Table of Contents
+1. [setup_error_logs script](setup_error_logs.md)
+
 This SQL script initializes a PostgreSQL market data schema and creates individual tables for a large list of financial instruments, including:
 
 Equities (e.g., AAPL, MSFT, TSLA)
