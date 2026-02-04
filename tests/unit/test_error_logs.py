@@ -2,11 +2,12 @@ import sys
 from pathlib import Path
 import datetime as dt
 from zoneinfo import ZoneInfo
+import importlib
 
 # --- make src/ importable ---
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-import auto_data_collection as mod  # src/test_error_logs.py
+mod = importlib.import_module("auto_data_collection")  # src/test_error_logs.py
 
 
 def _setup_isolated_cwd(tmp_path, monkeypatch):
