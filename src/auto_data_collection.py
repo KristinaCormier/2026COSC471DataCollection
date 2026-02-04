@@ -236,26 +236,6 @@ def main():
         print("error: API key is missing; ensure FMP_API_KEY is set", file=sys.stderr)
         sys.exit(1)
 
-    #start = current_hour(dt.datetime.now(TZ)) # change this to test on off market days
-
-    #now_local = dt.datetime.now(TZ).replace(second=0, microsecond=0) # local time 
-
-    # use the current minute from local time and replace the start time minute with it 
-    #end_candidate = start.replace(minute=now_local.minute, second=0, microsecond=0)
-
-    # Align to 5 minute intervals (API updates every 5 mins)
-    #end_candidate = end_candidate - dt.timedelta(minutes=end_candidate.minute % 5)
-
-    # cap by WINDOW_MIN so range doesnt get too large
-    #end = min(end_candidate, start + dt.timedelta(minutes=WINDOW_MIN))
-
-    #Recently added - Liam
-    #start = current_hour(dt.datetime.now(TZ))
-    #now_local = dt.datetime.now(TZ).replace(second=0, microsecond=0)
-
-    #end = now_local - dt.timedelta(minutes=now_local.minute % 5)
-    #end = min(end, start + dt.timedelta(minutes=WINDOW_MIN))
-
     if end <= start:
         end = start + dt.timedelta(minutes=5)
 
