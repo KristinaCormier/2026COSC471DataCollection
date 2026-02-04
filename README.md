@@ -60,7 +60,7 @@ CREATE TABLE market.aapl (
 The UNIQUE(date) constraint is required for UPSERT.
 
 Running the Script
-python scripts/Auto_Data_Collection.py
+python src/auto_data_collection.py
 
 Common Issues
 
