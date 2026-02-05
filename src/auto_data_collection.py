@@ -12,6 +12,7 @@ import requests
 from pathlib import Path
 # DB client
 import psycopg
+from src import detect_null as dn
 
 # load in environment vars 
 API_KEY        = os.environ.get("FMP_API_KEY", "")
@@ -145,6 +146,7 @@ def fetch_and_insert(conn, symbol: str, start: dt.datetime, end: dt.datetime):
     # Filter to the requested window and prepare rows for DB
     rows = []
     for row in data: # loop through json response  
+        dn.validate_row(row)  # validate row for nulls
         ts_str = row.get("date")
         if not ts_str:
             continue
