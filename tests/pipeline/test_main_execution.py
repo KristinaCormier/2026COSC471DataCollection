@@ -1,5 +1,5 @@
 """
-Pipeline tests for end-to-end execution of auto_data_collection.
+Pipeline tests for end-to-end execution of intraday_data_collection.
 These tests validate the main() function and complete execution flow.
 """
 
@@ -9,7 +9,8 @@ import sys
 import pytest
 from unittest.mock import MagicMock
 
-from src import auto_data_collection as collector
+from src import intraday_data_collection as collector
+from src import db_utils as dbu
 from tests.conftest import FakeResponse, FakeConnection
 
 
@@ -79,10 +80,10 @@ def test_main_exits_when_api_key_missing(monkeypatch, capsys):
 @pytest.mark.pipeline
 def test_main_exits_when_db_connection_fails(mock_env_complete, monkeypatch, capsys):
     # Given: Valid API key but failing DB connection
-    def mock_db_connect_fail():
+    def mock_db_connect_fail(host, port, dbname, user, password):
         raise Exception("Connection refused")
     
-    monkeypatch.setattr(collector, "db_connect", mock_db_connect_fail)
+    monkeypatch.setattr(dbu, "db_connect", mock_db_connect_fail)
     
     # When: Running main() and expecting system exit (¬Q)
     with pytest.raises(SystemExit) as exc_info:
@@ -101,10 +102,10 @@ def test_main_successful_execution(mock_env_complete, mock_successful_api, monke
     # Given: Complete valid environment and mocked successful responses
     mock_conn = FakeConnection()
     
-    def mock_db_connect():
+    def mock_db_connect(host, port, dbname, user, password):
         return mock_conn
     
-    monkeypatch.setattr(collector, "db_connect", mock_db_connect)
+    monkeypatch.setattr(dbu, "db_connect", mock_db_connect)
     
     # When: Running main()
     collector.main()
@@ -128,7 +129,7 @@ def test_main_continues_after_symbol_error(mock_env_complete, monkeypatch, capsy
     mock_conn = FakeConnection()
     call_count = {"count": 0}
     
-    def mock_db_connect():
+    def mock_db_connect(host, port, dbname, user, password):
         return mock_conn
     
     def mock_fetch_and_insert(conn, symbol, start, end):
@@ -137,7 +138,7 @@ def test_main_continues_after_symbol_error(mock_env_complete, monkeypatch, capsy
             raise Exception("API rate limit exceeded")
         return 5  # Successful for other symbols
     
-    monkeypatch.setattr(collector, "db_connect", mock_db_connect)
+    monkeypatch.setattr(dbu, "db_connect", mock_db_connect)
     monkeypatch.setattr(collector, "fetch_and_insert", mock_fetch_and_insert)
     
     # When: Running main()
@@ -167,7 +168,7 @@ def test_main_loads_env_vars_at_runtime(monkeypatch, capsys):
     
     mock_conn = FakeConnection()
     
-    def mock_db_connect():
+    def mock_db_connect(host, port, dbname, user, password):
         # Verify runtime values are loaded
         assert collector.API_KEY == "runtime_key"
         assert collector.SYMBOLS == ["GOOGL"]
@@ -180,7 +181,7 @@ def test_main_loads_env_vars_at_runtime(monkeypatch, capsys):
     def mock_fetch_and_insert(conn, symbol, start, end):
         return 0
     
-    monkeypatch.setattr(collector, "db_connect", mock_db_connect)
+    monkeypatch.setattr(dbu, "db_connect", mock_db_connect)
     monkeypatch.setattr(collector, "fetch_and_insert", mock_fetch_and_insert)
     
     # When: Running main()
@@ -198,7 +199,7 @@ def test_main_computes_time_window(mock_env_complete, monkeypatch, capsys):
     mock_conn = FakeConnection()
     captured_window = {"start": None, "end": None}
     
-    def mock_db_connect():
+    def mock_db_connect(host, port, dbname, user, password):
         return mock_conn
     
     def mock_fetch_and_insert(conn, symbol, start, end):
@@ -206,7 +207,7 @@ def test_main_computes_time_window(mock_env_complete, monkeypatch, capsys):
         captured_window["end"] = end
         return 0
     
-    monkeypatch.setattr(collector, "db_connect", mock_db_connect)
+    monkeypatch.setattr(dbu, "db_connect", mock_db_connect)
     monkeypatch.setattr(collector, "fetch_and_insert", mock_fetch_and_insert)
     
     # When: Running main()

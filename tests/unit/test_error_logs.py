@@ -1,21 +1,14 @@
-import sys
-from pathlib import Path
 import datetime as dt
 from zoneinfo import ZoneInfo
-import importlib
 
-# --- make src/ importable ---
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-
-mod = importlib.import_module("auto_data_collection")  # src/test_error_logs.py
+from src import logging_utils as mod
 
 
 def _setup_isolated_cwd(tmp_path, monkeypatch):
     """Run in a temp working dir so the test doesn't touch real ./logs."""
     monkeypatch.chdir(tmp_path)
-    # log_fetch_csv uses global TZ inside the module; ensure it exists.
-    mod.TZ = ZoneInfo("America/New_York")
-    return mod.TZ
+    # Return timezone for log functions
+    return ZoneInfo("America/New_York")
 
 
 def _read_lines(tmp_path):
@@ -38,6 +31,7 @@ def test_log_fetch_csv_creates_file_and_writes_header_and_row(tmp_path, monkeypa
         api_rows=200,
         filtered_rows=12,
         csv_path="logs/fetch_data_log.csv",
+        tz=TZ,
     )
 
     lines = _read_lines(tmp_path)
@@ -62,6 +56,7 @@ def test_log_fetch_csv_appends_second_row_without_duplicate_header(tmp_path, mon
         api_rows=150,
         filtered_rows=10,
         csv_path="logs/fetch_data_log.csv",
+        tz=TZ,
     )
     mod.log_fetch_csv(
         symbol="MSFT",
@@ -72,6 +67,7 @@ def test_log_fetch_csv_appends_second_row_without_duplicate_header(tmp_path, mon
         api_rows=151,
         filtered_rows=11,
         csv_path="logs/fetch_data_log.csv",
+        tz=TZ,
     )
 
     lines = _read_lines(tmp_path)
@@ -99,6 +95,7 @@ def test_log_fetch_csv_creates_logs_directory_if_missing(tmp_path, monkeypatch):
         api_rows=1,
         filtered_rows=1,
         csv_path="logs/fetch_data_log.csv",
+        tz=TZ,
     )
 
     assert (tmp_path / "logs").is_dir()
@@ -120,6 +117,7 @@ def test_log_fetch_csv_run_ts_market_is_iso_and_has_tz_offset(tmp_path, monkeypa
         api_rows=2,
         filtered_rows=2,
         csv_path="logs/fetch_data_log.csv",
+        tz=TZ,
     )
 
     row = _read_lines(tmp_path)[1]
