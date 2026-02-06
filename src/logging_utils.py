@@ -36,9 +36,10 @@ def log_fetch_csv(
         csv_path: Path to the log file
         tz: Timezone for run timestamp
     """
-    log_dir = Path("logs")
-    log_dir.mkdir(parents=True, exist_ok=True)
-    log_file = log_dir / "fetch_data_log.csv"
+    log_file = Path(csv_path)
+    log_dir = log_file.parent
+    if str(log_dir):
+        log_dir.mkdir(parents=True, exist_ok=True)
 
     header = "run_ts_market,symbol,window_start,window_end,from_day,to_day,api_rows,filtered_rows\n"
     run_ts = dt.datetime.now(tz).isoformat()
