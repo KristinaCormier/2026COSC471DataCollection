@@ -21,7 +21,7 @@ Python 3.9+
 
 Packages:
 
-pip install requests psycopg2-binary
+pip install requests psycopg[binary]
 
 Configuration (Environment Variables)
 API
@@ -60,7 +60,7 @@ CREATE TABLE market.aapl (
 The UNIQUE(date) constraint is required for UPSERT.
 
 Running the Script
-python scripts/Auto_Data_Collection.py
+python src/intraday_data_collection.py
 
 Common Issues
 
