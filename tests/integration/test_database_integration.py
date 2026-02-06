@@ -9,6 +9,8 @@ import pytest
 from zoneinfo import ZoneInfo
 
 from src import auto_data_collection as collector
+from src import db_utils as dbu
+from src import time_utils as tu
 
 
 # Setup
@@ -41,7 +43,7 @@ def test_db_connect_with_invalid_credentials_fails(monkeypatch):
 
     # When/Then: Attempting to connect should raise an exception (¬Q observed, proving ¬P)
     with pytest.raises(Exception):
-        conn = collector.db_connect()
+        conn = dbu.db_connect("invalid_host", 9999, "nonexistent_db", "invalid_user", "invalid_password")
         conn.close()
 
 
@@ -56,7 +58,13 @@ def test_db_connect_succeeds_with_valid_credentials(test_db_config):
     
     # When: Establishing connection
     try:
-        conn = collector.db_connect()
+        conn = dbu.db_connect(
+            collector.PGHOST,
+            collector.PGPORT,
+            collector.PGDATABASE,
+            collector.PGUSER,
+            collector.PGPASSWORD
+        )
         
         # Then: Connection should be established successfully
         assert conn is not None
@@ -82,7 +90,13 @@ def test_db_connect_succeeds_with_valid_credentials(test_db_config):
 def test_check_table_exists_raises_for_nonexistent_table(test_db_config):
     # Given: A database connection and a non-existent table name
     try:
-        conn = collector.db_connect()
+        conn = dbu.db_connect(
+            collector.PGHOST,
+            collector.PGPORT,
+            collector.PGDATABASE,
+            collector.PGUSER,
+            collector.PGPASSWORD
+        )
     except Exception as e:
         pytest.skip(f"Database not available: {e}")
     
@@ -90,7 +104,7 @@ def test_check_table_exists_raises_for_nonexistent_table(test_db_config):
     
     # When/Then: Checking for non-existent table should raise RuntimeError (¬Q observed, proving ¬P)
     with pytest.raises(RuntimeError, match="does not exist"):
-        collector.check_table_exists(conn, table_name)
+        dbu.check_table_exists(conn, table_name)
     
     conn.close()
 
@@ -105,7 +119,13 @@ def test_check_table_exists_passes_for_existing_table(test_db_config):
     # Given: A database connection and an existing table
     # Note: This assumes market.aapl or similar exists from schema setup
     try:
-        conn = collector.db_connect()
+        conn = dbu.db_connect(
+            collector.PGHOST,
+            collector.PGPORT,
+            collector.PGDATABASE,
+            collector.PGUSER,
+            collector.PGPASSWORD
+        )
     except Exception as e:
         pytest.skip(f"Database not available: {e}")
     
@@ -116,7 +136,7 @@ def test_check_table_exists_passes_for_existing_table(test_db_config):
     for table_name in test_tables:
         try:
             # When: Checking for existing table
-            collector.check_table_exists(conn, table_name)
+            dbu.check_table_exists(conn, table_name)
             table_found = True
             # Then: No exception should be raised
             break
@@ -130,13 +150,13 @@ def test_check_table_exists_passes_for_existing_table(test_db_config):
 
 
 # Test 5: current_hour() returns top of the hour
-def test_current_hour_returns_top_of_hour():
+def test_currtureturns_top_of_hour():
     # Given: A timestamp with arbitrary minutes/seconds
     tz = ZoneInfo("America/New_York")
     now = dt.datetime(2026, 1, 26, 15, 47, 32, 123456, tzinfo=tz)
     
     # When: Getting the current hour
-    result = collector.current_hour(now)
+    result = tu.current_hour(now)
     
     # Then: Should return same hour with zeroed minutes/seconds/microseconds
     assert result.year == 2026

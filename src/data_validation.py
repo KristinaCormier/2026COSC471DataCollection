@@ -1,3 +1,8 @@
+"""
+Data validation and error logging utilities.
+Analyzes row completeness, identifies missing fields, and logs data quality issues.
+"""
+
 from __future__ import annotations
 
 import csv
@@ -8,10 +13,21 @@ from typing import Iterable, Mapping, Sequence
 
 
 def is_empty(value) -> bool:
+    """Check if a value is None or an empty string."""
     return value is None or (isinstance(value, str) and value.strip() == "")
 
 
 def analyze_row(row: Mapping[str, object], fields: Sequence[str]) -> tuple[list[str], bool]:
+    """
+    Analyze a data row for missing or empty fields.
+    
+    Args:
+        row: Dictionary of field values
+        fields: List of expected field names
+    
+    Returns:
+        Tuple of (list of missing field names, whether all fields are empty)
+    """
     missing_fields = [field for field in fields if is_empty(row.get(field))]
     all_empty = len(missing_fields) == len(fields)
     return missing_fields, all_empty
@@ -27,6 +43,18 @@ def log_row_issues(
     log_path: str = "logs/data_error_log.csv",
     tz: dt.tzinfo | None = None,
 ) -> None:
+    """
+    Log data quality issues to a CSV file.
+    
+    Args:
+        symbol: Stock symbol
+        row: Original data row with issues
+        missing_fields: List of missing/empty field names
+        inferred_date: Inferred timestamp if date was missing
+        reason: Reason for the issue (e.g., 'date_missing_prev_row')
+        log_path: Path to the log file
+        tz: Timezone for timestamp
+    """
     if not missing_fields and not reason:
         return
 
@@ -50,4 +78,16 @@ def log_row_issues(
 
 
 def validate_row(row: Mapping[str, object], fields: Sequence[str]) -> tuple[list[str], bool]:
+    """
+    Validate a row and return missing fields.
+    
+    Alias for analyze_row for backward compatibility.
+    
+    Args:
+        row: Dictionary of field values
+        fields: List of expected field names
+    
+    Returns:
+        Tuple of (list of missing field names, whether all fields are empty)
+    """
     return analyze_row(row, fields)
