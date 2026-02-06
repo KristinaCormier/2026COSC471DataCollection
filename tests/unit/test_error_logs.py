@@ -1,13 +1,7 @@
-import sys
-from pathlib import Path
 import datetime as dt
 from zoneinfo import ZoneInfo
-import importlib
 
-# --- make src/ importable ---
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-
-mod = importlib.import_module("logging_utils")  # src/logging_utils.py
+from src import logging_utils as mod
 
 
 def _setup_isolated_cwd(tmp_path, monkeypatch):
