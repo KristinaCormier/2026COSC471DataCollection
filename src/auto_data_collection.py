@@ -124,6 +124,7 @@ def fetch_and_insert(conn, symbol: str, start: dt.datetime, end: dt.datetime, no
 
     # CSV fetch log (per run, per symbol) - (Cade, Kristina - Feb 03, 2026)
     lu.log_fetch_csv(
+    lu.log_fetch_csv(
         symbol=symbol,
         start=start,
         end=end,
