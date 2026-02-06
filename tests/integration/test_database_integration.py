@@ -150,7 +150,7 @@ def test_check_table_exists_passes_for_existing_table(test_db_config):
 
 
 # Test 5: current_hour() returns top of the hour
-def test_currtureturns_top_of_hour():
+def test_current_hour_returns_top_of_hour():
     # Given: A timestamp with arbitrary minutes/seconds
     tz = ZoneInfo("America/New_York")
     now = dt.datetime(2026, 1, 26, 15, 47, 32, 123456, tzinfo=tz)
