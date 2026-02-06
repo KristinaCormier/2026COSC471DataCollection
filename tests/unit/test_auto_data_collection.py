@@ -2,7 +2,7 @@ import datetime as dt
 import pytest
 from zoneinfo import ZoneInfo
 
-from src import auto_data_collection as collector
+from src import intraday_data_collection as collector
 from src import time_utils as tu
 from src import db_utils as dbu
 from tests.conftest import FakeResponse, FakeConnection

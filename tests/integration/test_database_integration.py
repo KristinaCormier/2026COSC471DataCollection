@@ -8,7 +8,7 @@ import os
 import pytest
 from zoneinfo import ZoneInfo
 
-from src import auto_data_collection as collector
+from src import intraday_data_collection as collector
 from src import db_utils as dbu
 from src import time_utils as tu
 

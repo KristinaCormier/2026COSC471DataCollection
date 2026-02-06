@@ -1,5 +1,5 @@
 """
-Pipeline tests for end-to-end execution of auto_data_collection.
+Pipeline tests for end-to-end execution of intraday_data_collection.
 These tests validate the main() function and complete execution flow.
 """
 
@@ -9,7 +9,7 @@ import sys
 import pytest
 from unittest.mock import MagicMock
 
-from src import auto_data_collection as collector
+from src import intraday_data_collection as collector
 from src import db_utils as dbu
 from tests.conftest import FakeResponse, FakeConnection
 
