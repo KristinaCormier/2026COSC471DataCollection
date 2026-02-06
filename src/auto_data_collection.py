@@ -97,32 +97,6 @@ def compute_window(now_local: dt.datetime, window_min: int) -> tuple[dt.datetime
         end = start + dt.timedelta(minutes=5)
     return start, end
 
-# Added log_fetch_csv logic - (Cade, Kristina - Feb 03, 2026)
-
-def log_fetch_csv(symbol: str, start: dt.datetime, end: dt.datetime, day_from: str, day_to: str,
-                  api_rows: int, filtered_rows: int, csv_path: str):
-    """
-    Appends a single-line fetch log to a CSV file.
-    Creates the file + header if it doesn't exist.
-    """
-    log_dir = Path("logs")
-    log_dir.mkdir(parents=True, exist_ok=True)
-    log_file = log_dir / "fetch_data_log.csv"
-
-    header = "run_ts_market,symbol,window_start,window_end,from_day,to_day,api_rows,filtered_rows\n"
-    run_ts = dt.datetime.now(TZ).isoformat()
-
-    line = f"{run_ts},{symbol},{start.isoformat()},{end.isoformat()},{day_from},{day_to},{api_rows},{filtered_rows}\n"
-
-    if not log_file.exists():
-        log_file.write_text(header, encoding="utf-8")
-    with log_file.open("a", encoding="utf-8") as f:
-        f.write(line)
-
-    # optional console line so you can see where it went
-    print(f"fetch log appended: {log_file}")
-
-
 
 #  API Fetch and insert into Postgres 
 
@@ -146,29 +120,66 @@ def fetch_and_insert(conn, symbol: str, start: dt.datetime, end: dt.datetime):
     # Filter to the requested window and prepare rows for DB
     rows = []
     for row in data: # loop through json response  
-        dn.validate_row(row)  # validate row for nulls
-        ts_str = row.get("date")
-        if not ts_str:
+        # dn.validate_row(row)  # validate row for nulls
+        missing_fields, all_empty = dn.analyze_row(row, ["date", "open", "high", "low", "close", "volume"])
+        if all_empty:
+            dn.log_row_issues(
+                symbol=symbol,
+                row=row,
+                missing_fields=missing_fields,
+                inferred_date=None,
+                reason="all fields empty",
+                tz=TZ
+            )
             continue
-        ts_exch = parse_api_time(ts_str)
-        if start <= ts_exch < end:
+        ts_str = row.get("date")
+        ts_exchange = None
+        inferred_reason = None
+        inferred_date = None
+        # if not ts_str:
+            # continue
+        if dn.is_empty(ts_str):
+            ts_exchange, inferred_reason = tu.infer_timestamp
+            inferred_date = ts_exchange
+            missing_fields = list(set(missing_fields + ["date"]))
+        else:
+            try:
+                ts_exchange = tu.parse.api_time(ts_str, TZ)
+            except Exception:
+                ts_exchange, inferred_reason = tu.infer_timestamp
+                inferred_date = ts_exchange
+                missing_fields = list(set(missing_fields + ["date"]))
+        if ts_exchange is not None:
+            last_timestamp = ts_exchange
+
+       #  ts_exch = parse_api_time(ts_str)
+        if missing_fields or inferred_reason:
+            dn.log_row_issues(
+                symbol=symbol,
+                row=row,
+                missing_fields=missing_fields,
+                inferred_date=inferred_date,
+                reason=inferred_reason,
+                tz=TZ
+            )
+        # if start <= ts_exch < end:
             # grab all data fields from api 
-            open_val   = row.get("open")
-            high_val   = row.get("high")
-            low_val    = row.get("low")
-            close_val  = row.get("close")
-            volume_val = row.get("volume")
+        open_val   = row.get("open")
+        high_val   = row.get("high")
+        low_val    = row.get("low")
+        close_val  = row.get("close")
+        volume_val = row.get("volume")
             # require close price to exist 
-            if close_val is None:
-                continue
+            # if close_val is None:
+#                continue
 
             # append data to rows list 
-            rows.append((ts_exch, open_val, high_val, low_val, close_val, volume_val))
+        rows.append((ts_exch, open_val, high_val, low_val, close_val, volume_val))
 
     rows.sort(key=lambda x: x[0])  # sort rows ascending by timestamp
 
     # CSV fetch log (per run, per symbol) - (Cade, Kristina - Feb 03, 2026)
-    log_fetch_csv(
+    lu.log_fetch_csv(
         symbol=symbol,
         start=start,
         end=end,
