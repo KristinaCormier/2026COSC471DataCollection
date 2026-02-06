@@ -69,6 +69,6 @@ def compute_window(now_local: dt.datetime, window_min: int) -> tuple[dt.datetime
     end = now_local.replace(second=0, microsecond=0)
     end = end - dt.timedelta(minutes=end.minute % 5)
     end = min(end, start + dt.timedelta(minutes=window_min))
-    if end <= start:
+    if end < start + dt.timedelta(minutes=5):
         end = start + dt.timedelta(minutes=5)
     return start, end
