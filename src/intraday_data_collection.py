@@ -3,24 +3,27 @@
 # It should insert this data into postgres for each symbol provided
 # This script is designed to be executed every hour throughout every extended market day using a job scheduler
 
+from __future__ import annotations
+
 import os
 import datetime as dt
 import sys
-import re
-
 import requests
-from zoneinfo import ZoneInfo
-# DB client
-import psycopg2
-from psycopg2.extras import execute_values
 
-# load in enviornment vars
-API_KEY = os.environ.get("FMP_API_KEY", "")
-SYMBOLS = os.environ.get("SYMBOLS", "AAPL").split(",")
-MARKET_TZ = os.environ.get("MARKET_TZ", "America/New_York")
-WINDOW_MIN = int(
-    os.environ.get("WINDOW_MINUTES", "60")
-)  # prevents grabbing large range of data
+# DB client
+import psycopg
+
+# Internal utilities
+from src import data_validation as dv
+from src import time_utils as tu
+from src import db_utils as dbu
+from src import logging_utils as lu
+
+# load in environment vars 
+API_KEY        = os.environ.get("FMP_API_KEY", "")
+SYMBOLS        = os.environ.get("SYMBOLS", "AAPL").split(",")
+MARKET_TZ      = os.environ.get("MARKET_TZ", "America/New_York")
+WINDOW_MIN     = int(os.environ.get("WINDOW_MINUTES", "60")) # prevents grabbing large range of data 
 
 # DB connection vars
 PGHOST = os.environ.get("PGHOST", "")
@@ -31,10 +34,7 @@ PGPASSWORD = os.environ.get("PGPASSWORD", "")
 
 BASE_URL = "https://financialmodelingprep.com/api/v3/historical-chart/5min/{symbol}"
 
-# moved to main()
-# if not API_KEY:
-#   print("error: API key is missing; ensure FMP_API_KEY is set", file=sys.stderr)
-#  sys.exit(1)
+DATA_FIELDS = ("date", "open", "high", "low", "close", "volume")
 
 # cleanup symbols
 SYMBOLS = [s.strip() for s in SYMBOLS if s.strip()]
@@ -45,87 +45,15 @@ SYMBOLS = [s.strip() for s in SYMBOLS if s.strip()]
 
 TZ = ZoneInfo(MARKET_TZ)
 
-# helper methods:
-
-
-def current_hour(now: dt.datetime) -> dt.datetime:
-    return now.replace(minute=0, second=0, microsecond=0)
-
-
-def parse_api_time(s: str) -> dt.datetime:
-    # helper to parse timestamp from api
-    return dt.datetime.strptime(s, "%Y-%m-%d %H:%M:%S").replace(tzinfo=TZ)
-
-
-def ymd(d: dt.date) -> str:
-    # years months date format
-    return d.strftime("%Y-%m-%d")
-
-
-def safe_table_name_for_symbol(sym: str) -> str:
-    # get ticker name to match with postgres tables
-    base = re.sub(r"[^A-Za-z0-9]", "", sym).lower()
-    if not base:
-        raise ValueError(f"Invalid symbol for table mapping: {sym!r}")
-    return f"market.{base}"
-
-
-def db_connect():
-    return psycopg2.connect(
-        host=PGHOST,
-        port=PGPORT,
-        dbname=PGDATABASE,
-        user=PGUSER,
-        password=PGPASSWORD,
-    )
-
-
-def check_table_exists(conn, table_qualified: str):
-    # this method helps to ensure a table exists with the given name before inserting to db
-    schema, table = table_qualified.split(".", 1)
-    with conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT 1
-            FROM information_schema.tables
-            WHERE table_schema=%s AND table_name=%s
-            """,
-            (schema, table),
-        )
-        if cur.fetchone() is None:
-            raise RuntimeError(
-                f"Required table {table_qualified} does not exist. "
-                f"Create it first with the provided SQL."
-            )
-
-
-# added 2026-01-29 helper for time window for unit testing
-def compute_window(
-    now_local: dt.datetime, window_min: int
-) -> tuple[dt.datetime, dt.datetime]:
-    """
-    Returns (start, end) where:
-      - start is top of the hour
-      - end is aligned down to nearest 5-minute boundary
-      - end is capped by window_min
-      - end is always > start (at least 5 minutes)
-    """
-    start = current_hour(now_local)
-    end = now_local.replace(second=0, microsecond=0)
-    end = end - dt.timedelta(minutes=end.minute % 5)
-    end = min(end, start + dt.timedelta(minutes=window_min))
-    if end <= start:
-        end = start + dt.timedelta(minutes=5)
-    return start, end
 
 
 #  API Fetch and insert into Postgres
 
 
-def fetch_and_insert(conn, symbol: str, start: dt.datetime, end: dt.datetime):
-
-    day_from = ymd(min(start.date(), end.date()))
-    day_to = ymd(max(start.date(), end.date()))
+def fetch_and_insert(conn, symbol: str, start: dt.datetime, end: dt.datetime, now_local: dt.datetime | None = None):
+    
+    day_from = tu.ymd(min(start.date(), end.date())) 
+    day_to   = tu.ymd(max(start.date(), end.date())) 
     url = BASE_URL.format(symbol=symbol)
     params = {"from": day_from, "to": day_to, "extended": "true", "apikey": API_KEY}
 
@@ -143,33 +71,82 @@ def fetch_and_insert(conn, symbol: str, start: dt.datetime, end: dt.datetime):
 
     # Filter to the requested window and prepare rows for DB
     rows = []
-    for row in data:  # loop through json response
-        ts_str = row.get("date")
-        if not ts_str:
+    last_ts = None
+    for row in data: # loop through json response
+        missing_fields, all_empty = dv.analyze_row(row, DATA_FIELDS)
+        if all_empty:
+            dv.log_row_issues(
+                symbol=symbol,
+                row=row,
+                missing_fields=missing_fields,
+                reason="all_fields_empty",
+                tz=TZ,
+            )
             continue
-        ts_exch = parse_api_time(ts_str)
-        if start <= ts_exch < end:
-            # grab all data fields from api
-            open_val = row.get("open")
-            high_val = row.get("high")
-            low_val = row.get("low")
-            close_val = row.get("close")
-            volumeVal = row.get("volume")
-            # require close price to exist
-            if close_val is None:
-                continue
 
-            # append data to rows list
-            rows.append((ts_exch, open_val, high_val, low_val, close_val, volumeVal))
+        ts_str = row.get("date")
+        ts_exch = None
+        inferred_reason = None
+        inferred_date = None
+
+        # handle missing/invalid timestamp
+        if dv.is_empty(ts_str):
+            ts_exch, inferred_reason = tu.infer_timestamp(last_ts, now_local, "date_missing", TZ)
+            inferred_date = ts_exch
+            missing_fields = list(set(missing_fields + ["date"]))
+        else:
+            try:
+                ts_exch = tu.parse_api_time(ts_str, TZ)
+            except Exception:
+                ts_exch, inferred_reason = tu.infer_timestamp(last_ts, now_local, "date_invalid", TZ)
+                inferred_date = ts_exch
+                missing_fields = list(set(missing_fields + ["date"]))
+
+        if ts_exch is not None:
+            last_ts = ts_exch
+
+        if missing_fields or inferred_reason:
+            dv.log_row_issues(
+                symbol=symbol,
+                row=row,
+                missing_fields=missing_fields,
+                inferred_date=inferred_date,
+                reason=inferred_reason,
+                tz=TZ,
+            )
+
+        # grab all data fields from api 
+        open_val   = row.get("open")
+        high_val   = row.get("high")
+        low_val    = row.get("low")
+        close_val  = row.get("close")
+        volume_val = row.get("volume")
+
+        # append data to rows list 
+        rows.append((ts_exch, open_val, high_val, low_val, close_val, volume_val))
 
     rows.sort(key=lambda x: x[0])  # sort rows ascending by timestamp
+
+    # CSV fetch log (per run, per symbol) - (Cade, Kristina - Feb 03, 2026)
+    lu.log_fetch_csv(
+        symbol=symbol,
+        start=start,
+        end=end,
+        day_from=day_from,
+        day_to=day_to,
+        api_rows=len(data),
+        filtered_rows=len(rows),
+        csv_path="logs/fetch_data_log.csv",
+        tz=TZ,
+    )
+
 
     if not rows:
         print("(no 5 minute bars in this window)")
         return 0
 
-    table = safe_table_name_for_symbol(symbol)
-    check_table_exists(conn, table)
+    table = dbu.safe_table_name_for_symbol(symbol)
+    dbu.check_table_exists(conn, table)
 
     # UPSERT with all columns (ts remains the conflict target)*updated from ts to date on two lines below to match db schema*
     insert_sql = f"""
@@ -184,8 +161,8 @@ def fetch_and_insert(conn, symbol: str, start: dt.datetime, end: dt.datetime):
     """
     # Execute sql query on postgres
     with conn.cursor() as cur:
-        execute_values(cur, insert_sql, rows, template="(%s, %s, %s, %s, %s, %s)")
-    conn.commit()
+        cur.executemany(insert_sql.replace("VALUES %s", "VALUES (%s, %s, %s, %s, %s, %s)"), rows)
+    conn.commit() 
 
     print(f"inserted/upserted {len(rows)} rows into {table}")
     return len(rows)
@@ -212,14 +189,12 @@ def main():
 
     TZ = ZoneInfo(MARKET_TZ)
     now_local = dt.datetime.now(TZ)
-    start, end = compute_window(now_local, WINDOW_MIN)
+    start, end = tu.compute_window(now_local, WINDOW_MIN)
 
     if not API_KEY:
         print("error: API key is missing; ensure FMP_API_KEY is set", file=sys.stderr)
         sys.exit(1)
 
-    if end <= start:
-        end = start + dt.timedelta(minutes=5)
 
     print()
     print(
@@ -228,7 +203,7 @@ def main():
 
     # connect once and reuse connection for all inserts
     try:
-        conn = db_connect()
+        conn = dbu.db_connect(PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD)
     except Exception as e:
         print(f"cannot connect to Postgres: {e}", file=sys.stderr)
         sys.exit(2)
@@ -241,9 +216,9 @@ def main():
             print(f"[error] {sym}: {e}", file=sys.stderr)
 
     try:
-        conn.close()  # close db connection
-    except Exception:
-        pass
+        conn.close() # close db connection 
+    except Exception as e:
+        print(f"[warning] failed to close database connection: {e}", file=sys.stderr)
 
     print()
     print(f" [done] total rows ingested: {total}")
