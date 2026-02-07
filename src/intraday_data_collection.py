@@ -9,6 +9,7 @@ import os
 import datetime as dt
 import sys
 import requests
+from zoneinfo import ZoneInfo
 
 # DB client
 import psycopg
@@ -40,16 +41,9 @@ DATA_FIELDS = ("date", "open", "high", "low", "close", "volume")
 SYMBOLS = [s.strip() for s in SYMBOLS if s.strip()]
 
 # timezone handling
-
-# from zoneinfo import ZoneInfo --line 12
-
 TZ = ZoneInfo(MARKET_TZ)
 
-
-
 #  API Fetch and insert into Postgres
-
-
 def fetch_and_insert(conn, symbol: str, start: dt.datetime, end: dt.datetime, now_local: dt.datetime | None = None):
     
     day_from = tu.ymd(min(start.date(), end.date())) 
@@ -61,9 +55,38 @@ def fetch_and_insert(conn, symbol: str, start: dt.datetime, end: dt.datetime, no
         f"\n   Calling API with symbol = {symbol}   Window Used: {start} -> {end}  (from {day_from} to {day_to}) ---"
     )
 
-    r = requests.get(url, params=params, timeout=25)  # GET API data
-    r.raise_for_status()
-    data = r.json() if r.content else []
+    try:
+        r = requests.get(url, params=params, timeout=25)  # GET API data
+        r.raise_for_status()
+        data = r.json() if r.content else []
+    except requests.exceptions.HTTPError as e:
+        lu.log_api_error(
+            symbol=symbol,
+            url=url,
+            error_type="HTTPError",
+            error_message=str(e),
+            status_code=r.status_code if hasattr(r, 'status_code') else None,
+            tz=TZ,
+        )
+        raise
+    except requests.exceptions.Timeout as e:
+        lu.log_api_error(
+            symbol=symbol,
+            url=url,
+            error_type="Timeout",
+            error_message=str(e),
+            tz=TZ,
+        )
+        raise
+    except requests.exceptions.RequestException as e:
+        lu.log_api_error(
+            symbol=symbol,
+            url=url,
+            error_type=type(e).__name__,
+            error_message=str(e),
+            tz=TZ,
+        )
+        raise
     # Recently added - Liam
     print("API returned rows:", len(data))
     if data:
@@ -75,9 +98,9 @@ def fetch_and_insert(conn, symbol: str, start: dt.datetime, end: dt.datetime, no
     for row in data: # loop through json response
         missing_fields, all_empty = dv.analyze_row(row, DATA_FIELDS)
         if all_empty:
-            dv.log_row_issues(
+            lu.log_validation_error(
                 symbol=symbol,
-                row=row,
+                row_data=row,
                 missing_fields=missing_fields,
                 reason="all_fields_empty",
                 tz=TZ,
@@ -106,9 +129,9 @@ def fetch_and_insert(conn, symbol: str, start: dt.datetime, end: dt.datetime, no
             last_ts = ts_exch
 
         if missing_fields or inferred_reason:
-            dv.log_row_issues(
+            lu.log_validation_error(
                 symbol=symbol,
-                row=row,
+                row_data=row,
                 missing_fields=missing_fields,
                 inferred_date=inferred_date,
                 reason=inferred_reason,
@@ -126,20 +149,6 @@ def fetch_and_insert(conn, symbol: str, start: dt.datetime, end: dt.datetime, no
         rows.append((ts_exch, open_val, high_val, low_val, close_val, volume_val))
 
     rows.sort(key=lambda x: x[0])  # sort rows ascending by timestamp
-
-    # CSV fetch log (per run, per symbol) - (Cade, Kristina - Feb 03, 2026)
-    lu.log_fetch_csv(
-        symbol=symbol,
-        start=start,
-        end=end,
-        day_from=day_from,
-        day_to=day_to,
-        api_rows=len(data),
-        filtered_rows=len(rows),
-        csv_path="logs/fetch_data_log.csv",
-        tz=TZ,
-    )
-
 
     if not rows:
         print("(no 5 minute bars in this window)")
@@ -160,9 +169,21 @@ def fetch_and_insert(conn, symbol: str, start: dt.datetime, end: dt.datetime, no
               volume = EXCLUDED.volume
     """
     # Execute sql query on postgres
-    with conn.cursor() as cur:
-        cur.executemany(insert_sql.replace("VALUES %s", "VALUES (%s, %s, %s, %s, %s, %s)"), rows)
-    conn.commit() 
+    try:
+        with conn.cursor() as cur:
+            cur.executemany(insert_sql.replace("VALUES %s", "VALUES (%s, %s, %s, %s, %s, %s)"), rows)
+        conn.commit()
+    except psycopg.Error as e:
+        lu.log_db_error(
+            symbol=symbol,
+            operation="UPSERT",
+            error_type=type(e).__name__,
+            error_message=str(e),
+            table_name=table,
+            row_count=len(rows),
+            tz=TZ,
+        )
+        raise 
 
     print(f"inserted/upserted {len(rows)} rows into {table}")
     return len(rows)
@@ -205,6 +226,13 @@ def main():
     try:
         conn = dbu.db_connect(PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD)
     except Exception as e:
+        lu.log_db_error(
+            symbol="N/A",
+            operation="CONNECT",
+            error_type=type(e).__name__,
+            error_message=str(e),
+            tz=TZ,
+        )
         print(f"cannot connect to Postgres: {e}", file=sys.stderr)
         sys.exit(2)
 
