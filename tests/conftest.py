@@ -195,3 +195,13 @@ def mock_execute_values(monkeypatch):
 
     monkeypatch.setattr("tests.conftest.FakeCursor.executemany", _fake_executemany)
     return captured
+
+
+@pytest.fixture(scope="function")
+def mock_error_log_dir(tmp_path, monkeypatch):
+    """Mock ERROR_LOG_DIR to use temp directory instead of /usr/local/dc_error_logs."""
+    from src import logging_utils
+    
+    error_log_dir = tmp_path / "dc_error_logs"
+    monkeypatch.setattr(logging_utils, "ERROR_LOG_DIR", error_log_dir)
+    return error_log_dir

@@ -1,7 +1,7 @@
-# On execution, this script should fetch stock data from the current time 
-# to the bottom of the hour at 5 minute intervals in EST. 
+# On execution, this script should fetch stock data from the current time
+# to the bottom of the hour at 5 minute intervals in EST.
 # It should insert this data into postgres for each symbol provided
-# This script is designed to be executed every hour throughout every extended market day using a job scheduler 
+# This script is designed to be executed every hour throughout every extended market day using a job scheduler
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ import os
 import datetime as dt
 import sys
 import requests
+from zoneinfo import ZoneInfo
 
 # DB client
 import psycopg
@@ -25,11 +26,11 @@ SYMBOLS        = os.environ.get("SYMBOLS", "AAPL").split(",")
 MARKET_TZ      = os.environ.get("MARKET_TZ", "America/New_York")
 WINDOW_MIN     = int(os.environ.get("WINDOW_MINUTES", "60")) # prevents grabbing large range of data 
 
-# DB connection vars 
-PGHOST     = os.environ.get("PGHOST", "")
-PGPORT     = int(os.environ.get("PGPORT", ""))
+# DB connection vars
+PGHOST = os.environ.get("PGHOST", "")
+PGPORT = int(os.environ.get("PGPORT", ""))
 PGDATABASE = os.environ.get("PGDATABASE", "")
-PGUSER     = os.environ.get("PGUSER", "")
+PGUSER = os.environ.get("PGUSER", "")
 PGPASSWORD = os.environ.get("PGPASSWORD", "")
 
 BASE_URL = "https://financialmodelingprep.com/api/v3/historical-chart/5min/{symbol}"
@@ -40,13 +41,9 @@ DATA_FIELDS = ("date", "open", "high", "low", "close", "volume")
 SYMBOLS = [s.strip() for s in SYMBOLS if s.strip()]
 
 # timezone handling
-from zoneinfo import ZoneInfo
 TZ = ZoneInfo(MARKET_TZ)
 
-
-
-#  API Fetch and insert into Postgres 
-
+#  API Fetch and insert into Postgres
 def fetch_and_insert(conn, symbol: str, start: dt.datetime, end: dt.datetime, now_local: dt.datetime | None = None):
     
     day_from = tu.ymd(min(start.date(), end.date())) 
@@ -54,12 +51,43 @@ def fetch_and_insert(conn, symbol: str, start: dt.datetime, end: dt.datetime, no
     url = BASE_URL.format(symbol=symbol)
     params = {"from": day_from, "to": day_to, "extended": "true", "apikey": API_KEY}
 
-    print(f"\n   Calling API with symbol = {symbol}   Window Used: {start} -> {end}  (from {day_from} to {day_to}) ---")
+    print(
+        f"\n   Calling API with symbol = {symbol}   Window Used: {start} -> {end}  (from {day_from} to {day_to}) ---"
+    )
 
-    r = requests.get(url, params=params, timeout=25) # GET API data 
-    r.raise_for_status()
-    data = r.json() if r.content else []
-    #Recently added - Liam
+    try:
+        r = requests.get(url, params=params, timeout=25)  # GET API data
+        r.raise_for_status()
+        data = r.json() if r.content else []
+    except requests.exceptions.HTTPError as e:
+        lu.log_api_error(
+            symbol=symbol,
+            url=url,
+            error_type="HTTPError",
+            error_message=str(e),
+            status_code=r.status_code if hasattr(r, 'status_code') else None,
+            tz=TZ,
+        )
+        raise
+    except requests.exceptions.Timeout as e:
+        lu.log_api_error(
+            symbol=symbol,
+            url=url,
+            error_type="Timeout",
+            error_message=str(e),
+            tz=TZ,
+        )
+        raise
+    except requests.exceptions.RequestException as e:
+        lu.log_api_error(
+            symbol=symbol,
+            url=url,
+            error_type=type(e).__name__,
+            error_message=str(e),
+            tz=TZ,
+        )
+        raise
+    # Recently added - Liam
     print("API returned rows:", len(data))
     if data:
         print("First:", data[0].get("date"), "Last:", data[-1].get("date"))
@@ -70,9 +98,9 @@ def fetch_and_insert(conn, symbol: str, start: dt.datetime, end: dt.datetime, no
     for row in data: # loop through json response
         missing_fields, all_empty = dv.analyze_row(row, DATA_FIELDS)
         if all_empty:
-            dv.log_row_issues(
+            lu.log_validation_error(
                 symbol=symbol,
-                row=row,
+                row_data=row,
                 missing_fields=missing_fields,
                 reason="all_fields_empty",
                 tz=TZ,
@@ -101,9 +129,9 @@ def fetch_and_insert(conn, symbol: str, start: dt.datetime, end: dt.datetime, no
             last_ts = ts_exch
 
         if missing_fields or inferred_reason:
-            dv.log_row_issues(
+            lu.log_validation_error(
                 symbol=symbol,
-                row=row,
+                row_data=row,
                 missing_fields=missing_fields,
                 inferred_date=inferred_date,
                 reason=inferred_reason,
@@ -121,20 +149,6 @@ def fetch_and_insert(conn, symbol: str, start: dt.datetime, end: dt.datetime, no
         rows.append((ts_exch, open_val, high_val, low_val, close_val, volume_val))
 
     rows.sort(key=lambda x: x[0])  # sort rows ascending by timestamp
-
-    # CSV fetch log (per run, per symbol) - (Cade, Kristina - Feb 03, 2026)
-    lu.log_fetch_csv(
-        symbol=symbol,
-        start=start,
-        end=end,
-        day_from=day_from,
-        day_to=day_to,
-        api_rows=len(data),
-        filtered_rows=len(rows),
-        csv_path="logs/fetch_data_log.csv",
-        tz=TZ,
-    )
-
 
     if not rows:
         print("(no 5 minute bars in this window)")
@@ -154,10 +168,22 @@ def fetch_and_insert(conn, symbol: str, start: dt.datetime, end: dt.datetime, no
               close  = EXCLUDED.close,
               volume = EXCLUDED.volume
     """
-    # Execute sql query on postgres 
-    with conn.cursor() as cur:
-        cur.executemany(insert_sql.replace("VALUES %s", "VALUES (%s, %s, %s, %s, %s, %s)"), rows)
-    conn.commit() 
+    # Execute sql query on postgres
+    try:
+        with conn.cursor() as cur:
+            cur.executemany(insert_sql.replace("VALUES %s", "VALUES (%s, %s, %s, %s, %s, %s)"), rows)
+        conn.commit()
+    except psycopg.Error as e:
+        lu.log_db_error(
+            symbol=symbol,
+            operation="UPSERT",
+            error_type=type(e).__name__,
+            error_message=str(e),
+            table_name=table,
+            row_count=len(rows),
+            tz=TZ,
+        )
+        raise 
 
     print(f"inserted/upserted {len(rows)} rows into {table}")
     return len(rows)
@@ -167,15 +193,17 @@ def main():
     global API_KEY, SYMBOLS, MARKET_TZ, WINDOW_MIN, PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD, BASE_URL, TZ
 
     # re-load env vars at runtime (not import time)
-    API_KEY    = os.environ.get("FMP_API_KEY", "")
-    SYMBOLS        = [s.strip() for s in os.environ.get("SYMBOLS", "AAPL").split(",") if s.strip()]
-    MARKET_TZ      = os.environ.get("MARKET_TZ", "America/New_York")
-    WINDOW_MIN     = int(os.environ.get("WINDOW_MINUTES", "60"))
+    API_KEY = os.environ.get("FMP_API_KEY", "")
+    SYMBOLS = [
+        s.strip() for s in os.environ.get("SYMBOLS", "AAPL").split(",") if s.strip()
+    ]
+    MARKET_TZ = os.environ.get("MARKET_TZ", "America/New_York")
+    WINDOW_MIN = int(os.environ.get("WINDOW_MINUTES", "60"))
 
-    PGHOST     = os.environ.get("PGHOST", "")
-    PGPORT     = int(os.environ.get("PGPORT", "5432"))
+    PGHOST = os.environ.get("PGHOST", "")
+    PGPORT = int(os.environ.get("PGPORT", "5432"))
     PGDATABASE = os.environ.get("PGDATABASE", "")
-    PGUSER     = os.environ.get("PGUSER", "")
+    PGUSER = os.environ.get("PGUSER", "")
     PGPASSWORD = os.environ.get("PGPASSWORD", "")
 
     BASE_URL = "https://financialmodelingprep.com/api/v3/historical-chart/5min/{symbol}"
@@ -189,14 +217,22 @@ def main():
         sys.exit(1)
 
 
-
     print()
-    print(f" [Collector Startup] \n Using Symbols:={SYMBOLS} \n Using Timezone: {MARKET_TZ} \n Using Time Window: {start} -> {end}")
+    print(
+        f" [Collector Startup] \n Using Symbols:={SYMBOLS} \n Using Timezone: {MARKET_TZ} \n Using Time Window: {start} -> {end}"
+    )
 
-    # connect once and reuse connection for all inserts 
+    # connect once and reuse connection for all inserts
     try:
         conn = dbu.db_connect(PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD)
     except Exception as e:
+        lu.log_db_error(
+            symbol="N/A",
+            operation="CONNECT",
+            error_type=type(e).__name__,
+            error_message=str(e),
+            tz=TZ,
+        )
         print(f"cannot connect to Postgres: {e}", file=sys.stderr)
         sys.exit(2)
 
@@ -214,6 +250,7 @@ def main():
 
     print()
     print(f" [done] total rows ingested: {total}")
+
 
 if __name__ == "__main__":
     main()

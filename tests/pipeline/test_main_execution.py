@@ -78,7 +78,7 @@ def test_main_exits_when_api_key_missing(monkeypatch, capsys):
 #   ¬Q: main() exits with code 2 due to connection failure
 #   ∴ ¬P: Therefore, DB credentials were NOT valid (error handling working)
 @pytest.mark.pipeline
-def test_main_exits_when_db_connection_fails(mock_env_complete, monkeypatch, capsys):
+def test_main_exits_when_db_connection_fails(mock_env_complete, monkeypatch, capsys, mock_error_log_dir):
     # Given: Valid API key but failing DB connection
     def mock_db_connect_fail(host, port, dbname, user, password):
         raise Exception("Connection refused")
@@ -98,7 +98,7 @@ def test_main_exits_when_db_connection_fails(mock_env_complete, monkeypatch, cap
 
 # Test 3: main() processes symbols and returns successfully
 @pytest.mark.pipeline
-def test_main_successful_execution(mock_env_complete, mock_successful_api, monkeypatch, capsys):
+def test_main_successful_execution(mock_env_complete, mock_successful_api, monkeypatch, capsys, mock_error_log_dir):
     # Given: Complete valid environment and mocked successful responses
     mock_conn = FakeConnection()
     
@@ -124,7 +124,7 @@ def test_main_successful_execution(mock_env_complete, mock_successful_api, monke
 #   ¬Q: Error message appears for one symbol
 #   ∴ ¬P: Therefore, NOT all symbols processed successfully (error handling working)
 @pytest.mark.pipeline
-def test_main_continues_after_symbol_error(mock_env_complete, monkeypatch, capsys):
+def test_main_continues_after_symbol_error(mock_env_complete, monkeypatch, capsys, mock_error_log_dir):
     # Given: Environment with multiple symbols, one will fail
     mock_conn = FakeConnection()
     call_count = {"count": 0}
@@ -154,7 +154,7 @@ def test_main_continues_after_symbol_error(mock_env_complete, monkeypatch, capsy
 
 # Test 5: main() loads environment variables at runtime
 @pytest.mark.pipeline
-def test_main_loads_env_vars_at_runtime(monkeypatch, capsys):
+def test_main_loads_env_vars_at_runtime(monkeypatch, capsys, mock_error_log_dir):
     # Given: Environment variables set after import
     monkeypatch.setenv("FMP_API_KEY", "runtime_key")
     monkeypatch.setenv("SYMBOLS", "GOOGL")
@@ -194,7 +194,7 @@ def test_main_loads_env_vars_at_runtime(monkeypatch, capsys):
 
 # Test 6: main() computes correct time window
 @pytest.mark.pipeline
-def test_main_computes_time_window(mock_env_complete, monkeypatch, capsys):
+def test_main_computes_time_window(mock_env_complete, monkeypatch, capsys, mock_error_log_dir):
     # Given: Complete environment
     mock_conn = FakeConnection()
     captured_window = {"start": None, "end": None}

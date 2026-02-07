@@ -120,7 +120,7 @@ def test_fetch_and_insert_inserts_out_of_range_rows(monkeypatch):
 
 
 # Test 8. Test for fetch_and_insert(): missing close is allowed
-def test_fetch_and_insert_allows_missing_close(monkeypatch):
+def test_fetch_and_insert_allows_missing_close(monkeypatch, mock_error_log_dir):
     # Given: A valid window and API data with missing close
     tz = ZoneInfo("America/New_York")
     collector.API_KEY = "test"
@@ -180,7 +180,7 @@ def test_fetch_and_insert_inserts_sorted_rows(monkeypatch):
 
 
 # Test 10. Test for fetch_and_insert(): missing date field is inferred
-def test_fetch_and_insert_infers_missing_date_field(monkeypatch):
+def test_fetch_and_insert_infers_missing_date_field(monkeypatch, mock_error_log_dir):
     # Given: API data with missing date field
     tz = ZoneInfo("America/New_York")
     collector.API_KEY = "test"
@@ -241,7 +241,7 @@ def test_fetch_and_insert_handles_empty_api_response(monkeypatch):
 
 
 # Test 12. Test for fetch_and_insert(): rows with missing fields are still inserted
-def test_fetch_and_insert_inserts_rows_with_missing_fields(monkeypatch):
+def test_fetch_and_insert_inserts_rows_with_missing_fields(monkeypatch, mock_error_log_dir):
     # Given: Multiple rows with missing fields
     tz = ZoneInfo("America/New_York")
     collector.API_KEY = "test"
