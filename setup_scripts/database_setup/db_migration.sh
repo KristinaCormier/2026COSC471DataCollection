@@ -13,6 +13,16 @@ set -e
 #SLOT_NAME="replica_slot_1"
 #DATA_DIR="/var/lib/pgsql/16/data"
 
+ENV_FILE="../.env"
+if [ -f "$ENV_FILE" ]; then
+    set -a
+    . "$ENV_FILE"
+    set +a
+else
+    echo "Error: $ENV_FILE not found. Please create the .env file with the necessary variables."
+    exit 1
+fi
+
 SSH_CONTROL_DIR="/tmp"
 SSH_CONTROL_SOCKET="$SSH_CONTROL_DIR/ssh-${PRIMARY_USER}@${PRIMARY_IP}.sock"
 SSH_OPTS="-o ControlMaster=auto -o ControlPersist=10m -o ControlPath=$SSH_CONTROL_SOCKET"
