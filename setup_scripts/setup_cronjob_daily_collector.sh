@@ -16,8 +16,8 @@ SCRIPT="$PROJECT_DIR/src/intraday_data_collection.py"
 #LOGFILE="$USER_HOME/collector.log"
 #LOGFILE_DIR="/usr/local/dc_error_logs"
 
-# 6:05 PM PST (server local time)
-CRON_TIME="5 18 * * *"
+# Every hour at minute 0 (i.e., 1:00, 2:00, etc.)
+CRON_TIME="0 * * * *"
 
 WRAPPER="/usr/local/bin/run_stock_collector.sh"
 CRON_FILE="/etc/cron.d/stock_collector_daily"
