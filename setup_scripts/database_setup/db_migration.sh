@@ -29,11 +29,11 @@ SSH_OPTS="-o ControlMaster=auto -o ControlPersist=10m -o ControlPath=$SSH_CONTRO
 SSH="ssh $SSH_OPTS"
 
 open_control_master() {
-    $SSH -MNf "PRIMARY_USER@$PRIMARY_IP"
+    $SSH -MNf "$PRIMARY_USER@$PRIMARY_IP"
 }
 
 close_control_master() {
-    ssh -S $SSH_CONTROL_SOCKET -O exit "PRIMARY_USER@$PRIMARY_IP" 2>/dev/null || true
+    ssh -S $SSH_CONTROL_SOCKET -O exit "$PRIMARY_USER@$PRIMARY_IP" 2>/dev/null || true
 }
 trap close_control_master EXIT
 
