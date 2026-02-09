@@ -31,21 +31,6 @@ done
 #=============================================================================
 # 2. DB Migration Setup
 #=============================================================================
-# Setup SSH keys for passwordless SSH between primary and standby servers
-if [ ! -f /home/cosc-admin/.ssh/id_rsa ]; then
-    sudo -u cosc-admin ssh-keygen -t rsa -b 4096 -N "" -f /home/cosc-admin/.ssh/id_rsa
-    echo "SSH keys generated for cosc-admin."
-else
-    echo "SSH keys for cosc-admin already exist. Skipping key generation."
-fi
-
-# Copy key to primary server
-sudo -u cosc-admin ssh-copy-id $PRIMARY_USER@$PRIMARY_IP
-
-# Sudo passwordless SSH setup on primary server if not already set
-ssh $PRIMARY_USER@$PRIMARY_IP "sudo grep -q '^$PRIMARY_USER ALL=(ALL) NOPASSWD:ALL' /etc/sudoers || " \
-"echo '$PRIMARY_USER ALL=(ALL) NOPASSWD:ALL' | sudo tee -a /etc/sudoers"
-
 # Run DB migration script
 echo "Starting database migration setup..."
 

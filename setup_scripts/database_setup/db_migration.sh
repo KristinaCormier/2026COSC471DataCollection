@@ -3,15 +3,6 @@ set -e
 
 # This script sets up a Physical Streaming Replication (PSR) system for the postgres16 database.
 # It configures the primary and standby servers for replication.
-# Define variables
-#PRIMARY_IP="10.12.43.225"
-#PRIMARY_USER="cosc-admin" #The SSH user for the primary server
-#REPLICATION_USER="rep_user"
-#REPLICATION_PASSWORD="replica_pass"
-#PG_CONF="/var/lib/pgsql/16/data/postgresql.conf" # DONE: adjust as needed
-#PG_HBA="/var/lib/pgsql/16/data/pg_hba.conf" # DONE: adjust as needed
-#SLOT_NAME="replica_slot_1"
-#DATA_DIR="/var/lib/pgsql/16/data"
 
 ENV_FILE="../.env"
 if [ -f "$ENV_FILE" ]; then
