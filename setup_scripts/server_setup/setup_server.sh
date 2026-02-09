@@ -2,6 +2,17 @@
 set -e
 
 # This script sets up a backup system
+ENV_FILE="../.env"
+if [ -f "$ENV_FILE" ]; then
+    set -a
+    . "$ENV_FILE"
+    set +a
+else
+    echo "Error: $ENV_FILE not found. Please create the .env file with the necessary variables."
+    exit 1
+fi
+
+DEFAULT_SUDO_PASSWORD="COSC2024"
 
 #=============================================================================
 # 1. Create Sudo Users
@@ -14,7 +25,7 @@ for USER in "${LIST_OF_SUDO_USERS[@]}"; do
         echo "Creating user $USER..."
         # Create user with home directory and bash shell with default password 'COSC2024'
         sudo useradd -m -s /bin/bash "$USER"
-        echo "$USER:COSC2024" | sudo chpasswd
+        echo "$USER:$DEFAULT_SUDO_PASSWORD" | sudo chpasswd
         echo "User $USER created."
     fi
 
