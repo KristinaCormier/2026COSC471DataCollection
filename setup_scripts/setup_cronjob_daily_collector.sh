@@ -10,9 +10,11 @@ USER_HOME="/home/$RUN_AS_USER"
 
 PROJECT_DIR="$USER_HOME/2026COSC471DataCollection"
 PYTHON="$PROJECT_DIR/.venv/bin/python"
-SCRIPT="$PROJECT_DIR/fmp/src/Auto_Data_Collection.py"
-ENVFILE="$USER_HOME/.collector_env"
-LOGFILE="$USER_HOME/collector.log"
+#SCRIPT="$PROJECT_DIR/fmp/src/Auto_Data_Collection.py"
+SCRIPT="$PROJECT_DIR/src/intraday_data_collection.py"
+#ENVFILE="$USER_HOME/.collector_env"
+#LOGFILE="$USER_HOME/collector.log"
+#LOGFILE_DIR="/usr/local/dc_error_logs"
 
 # 6:05 PM PST (server local time)
 CRON_TIME="5 18 * * *"
@@ -27,7 +29,7 @@ echo "Project dir: $PROJECT_DIR"
 # ------------------------------------------------------------
 # Basic prereq. checks
 # ------------------------------------------------------------
-[[ -f "$ENVFILE" ]] || { echo "Missing $ENVFILE"; exit 1; }
+#[[ -f "$ENVFILE" ]] || { echo "Missing $ENVFILE"; exit 1; }
 [[ -x "$PYTHON"  ]] || { echo "Missing $PYTHON"; exit 1; }
 [[ -f "$SCRIPT"  ]] || { echo "Missing $SCRIPT"; exit 1; }
 
@@ -45,7 +47,7 @@ if [[ -f "$ENVFILE" ]]; then
   set +a
 fi
 
-exec "$PYTHON" "$SCRIPT" >> "$LOGFILE" 2>&1
+exec "$PYTHON" "$SCRIPT"
 EOF
 
 sudo chmod +x "$WRAPPER"
@@ -66,5 +68,5 @@ sudo chmod 644 "$CRON_FILE"
 echo "Cron job installed"
 echo "Cron file:  $CRON_FILE"
 echo "Wrapper:    $WRAPPER"
-echo "Env file:   $ENVFILE"
+#echo "Env file:   $ENVFILE"
 echo "Log file:   $LOGFILE"

@@ -9,6 +9,18 @@ import datetime as dt
 from zoneinfo import ZoneInfo
 
 
+def parse_hhmm(value: str) -> dt.time:
+    """Parse HH:MM string into time."""
+    parts = value.split(":")
+    if len(parts) != 2:
+        raise ValueError(f"Invalid HH:MM time: {value}")
+    hour = int(parts[0])
+    minute = int(parts[1])
+    if hour < 0 or hour > 23 or minute < 0 or minute > 59:
+        raise ValueError(f"Invalid HH:MM time: {value}")
+    return dt.time(hour=hour, minute=minute)
+
+
 def current_hour(now: dt.datetime) -> dt.datetime:
     """Return the top of the current hour (minute, second, microsecond set to 0)."""
     return now.replace(minute=0, second=0, microsecond=0)
@@ -72,3 +84,11 @@ def compute_window(now_local: dt.datetime, window_min: int) -> tuple[dt.datetime
     if end < start + dt.timedelta(minutes=5):
         end = start + dt.timedelta(minutes=5)
     return start, end
+
+
+def is_market_open(now_local: dt.datetime, open_time: dt.time, close_time: dt.time) -> bool:
+    """Return True when now_local is on a weekday and within open/close times."""
+    if now_local.weekday() >= 5:
+        return False
+    now_t = now_local.time()
+    return open_time <= now_t <= close_time
