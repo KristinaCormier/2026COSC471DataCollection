@@ -25,6 +25,8 @@ API_KEY        = os.environ.get("FMP_API_KEY", "")
 SYMBOLS        = os.environ.get("SYMBOLS", "AAPL").split(",")
 MARKET_TZ      = os.environ.get("MARKET_TZ", "America/New_York")
 WINDOW_MIN     = int(os.environ.get("WINDOW_MINUTES", "60")) # prevents grabbing large range of data 
+MARKET_OPEN    = os.environ.get("MARKET_OPEN", "04:00")
+MARKET_CLOSE   = os.environ.get("MARKET_CLOSE", "21:00")
 
 # DB connection vars
 PGHOST = os.environ.get("PGHOST", "")
@@ -190,7 +192,7 @@ def fetch_and_insert(conn, symbol: str, start: dt.datetime, end: dt.datetime, no
 
 
 def main():
-    global API_KEY, SYMBOLS, MARKET_TZ, WINDOW_MIN, PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD, BASE_URL, TZ
+    global API_KEY, SYMBOLS, MARKET_TZ, WINDOW_MIN, MARKET_OPEN, MARKET_CLOSE, PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD, BASE_URL, TZ
 
     # re-load env vars at runtime (not import time)
     API_KEY = os.environ.get("FMP_API_KEY", "")
@@ -199,6 +201,8 @@ def main():
     ]
     MARKET_TZ = os.environ.get("MARKET_TZ", "America/New_York")
     WINDOW_MIN = int(os.environ.get("WINDOW_MINUTES", "60"))
+    MARKET_OPEN = os.environ.get("MARKET_OPEN", "04:00")
+    MARKET_CLOSE = os.environ.get("MARKET_CLOSE", "21:00")
 
     PGHOST = os.environ.get("PGHOST", "")
     PGPORT = int(os.environ.get("PGPORT", "5432"))
@@ -210,6 +214,21 @@ def main():
 
     TZ = ZoneInfo(MARKET_TZ)
     now_local = dt.datetime.now(TZ)
+
+    try:
+        market_open_time = tu.parse_hhmm(MARKET_OPEN)
+        market_close_time = tu.parse_hhmm(MARKET_CLOSE)
+    except ValueError as e:
+        print(f"error: invalid market hours: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    if not tu.is_market_open(now_local, market_open_time, market_close_time):
+        print(
+            "[info] market closed; skipping collection "
+            f"(hours {MARKET_OPEN}-{MARKET_CLOSE} {MARKET_TZ})"
+        )
+        sys.exit(0)
+
     start, end = tu.compute_window(now_local, WINDOW_MIN)
 
     if not API_KEY:
