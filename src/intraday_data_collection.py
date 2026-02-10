@@ -22,7 +22,7 @@ from src import logging_utils as lu
 
 # load in environment vars 
 API_KEY        = os.environ.get("FMP_API_KEY", "")
-SYMBOLS        = os.environ.get("SYMBOLS", "AAPL").split(",")
+SYMBOLS        = os.environ.get("SYMBOLS", "AAPL,AMD,AMZN,BA,BABA,BAC,C,CSCO,CVX,DIS,F,GE,GOOGL,IBM,INTC,JNJ,JPM,KO,MCD,META,MSFT,NFLX,NVDA,PFE,T,TSLA,VZ,WMT,XOM").split(",")
 MARKET_TZ      = os.environ.get("MARKET_TZ", "America/New_York")
 WINDOW_MIN     = int(os.environ.get("WINDOW_MINUTES", "60")) # prevents grabbing large range of data 
 
@@ -195,7 +195,7 @@ def main():
     # re-load env vars at runtime (not import time)
     API_KEY = os.environ.get("FMP_API_KEY", "")
     SYMBOLS = [
-        s.strip() for s in os.environ.get("SYMBOLS", "AAPL").split(",") if s.strip()
+        s.strip() for s in os.environ.get("SYMBOLS", "AAPL,AMD,AMZN,BA,BABA,BAC,C,CSCO,CVX,DIS,F,GE,GOOGL,IBM,INTC,JNJ,JPM,KO,MCD,META,MSFT,NFLX,NVDA,PFE,T,TSLA,VZ,WMT,XOM").split(",") if s.strip()
     ]
     MARKET_TZ = os.environ.get("MARKET_TZ", "America/New_York")
     WINDOW_MIN = int(os.environ.get("WINDOW_MINUTES", "60"))
