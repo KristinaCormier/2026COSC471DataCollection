@@ -9,18 +9,21 @@ import os
 import datetime as dt
 import sys
 import requests
+from dotenv import load_dotenv
 from zoneinfo import ZoneInfo
 
 # DB client
 import psycopg
 
 # Internal utilities
-from src import data_validation as dv
-from src import time_utils as tu
-from src import db_utils as dbu
-from src import logging_utils as lu
+import data_validation as dv
+import time_utils as tu
+import db_utils as dbu
+import logging_utils as lu
+
 
 # load in environment vars 
+load_dotenv()
 API_KEY        = os.environ.get("FMP_API_KEY", "")
 SYMBOLS        = os.environ.get("SYMBOLS", "AAPL").split(",")
 MARKET_TZ      = os.environ.get("MARKET_TZ", "America/New_York")
