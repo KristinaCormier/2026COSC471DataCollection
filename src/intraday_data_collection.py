@@ -9,22 +9,27 @@ import os
 import datetime as dt
 import sys
 import requests
+from dotenv import load_dotenv
 from zoneinfo import ZoneInfo
 
 # DB client
 import psycopg
 
 # Internal utilities
-from src import data_validation as dv
-from src import time_utils as tu
-from src import db_utils as dbu
-from src import logging_utils as lu
+import data_validation as dv
+import time_utils as tu
+import db_utils as dbu
+import logging_utils as lu
+
 
 # load in environment vars 
+load_dotenv()
 API_KEY        = os.environ.get("FMP_API_KEY", "")
 SYMBOLS        = os.environ.get("SYMBOLS", "AAPL,AMD,AMZN,BA,BABA,BAC,C,CSCO,CVX,DIS,F,GE,GOOGL,IBM,INTC,JNJ,JPM,KO,MCD,META,MSFT,NFLX,NVDA,PFE,T,TSLA,VZ,WMT,XOM").split(",")
 MARKET_TZ      = os.environ.get("MARKET_TZ", "America/New_York")
 WINDOW_MIN     = int(os.environ.get("WINDOW_MINUTES", "60")) # prevents grabbing large range of data 
+MARKET_OPEN    = os.environ.get("MARKET_OPEN", "04:00")
+MARKET_CLOSE   = os.environ.get("MARKET_CLOSE", "21:00")
 
 # DB connection vars
 PGHOST = os.environ.get("PGHOST", "")
@@ -190,7 +195,7 @@ def fetch_and_insert(conn, symbol: str, start: dt.datetime, end: dt.datetime, no
 
 
 def main():
-    global API_KEY, SYMBOLS, MARKET_TZ, WINDOW_MIN, PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD, BASE_URL, TZ
+    global API_KEY, SYMBOLS, MARKET_TZ, WINDOW_MIN, MARKET_OPEN, MARKET_CLOSE, PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD, BASE_URL, TZ
 
     # re-load env vars at runtime (not import time)
     API_KEY = os.environ.get("FMP_API_KEY", "")
@@ -199,6 +204,8 @@ def main():
     ]
     MARKET_TZ = os.environ.get("MARKET_TZ", "America/New_York")
     WINDOW_MIN = int(os.environ.get("WINDOW_MINUTES", "60"))
+    MARKET_OPEN = os.environ.get("MARKET_OPEN", "04:00")
+    MARKET_CLOSE = os.environ.get("MARKET_CLOSE", "21:00")
 
     PGHOST = os.environ.get("PGHOST", "")
     PGPORT = int(os.environ.get("PGPORT", "5432"))
@@ -210,6 +217,21 @@ def main():
 
     TZ = ZoneInfo(MARKET_TZ)
     now_local = dt.datetime.now(TZ)
+
+    try:
+        market_open_time = tu.parse_hhmm(MARKET_OPEN)
+        market_close_time = tu.parse_hhmm(MARKET_CLOSE)
+    except ValueError as e:
+        print(f"error: invalid market hours: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    if not tu.is_market_open(now_local, market_open_time, market_close_time):
+        print(
+            "[info] market closed; skipping collection "
+            f"(hours {MARKET_OPEN}-{MARKET_CLOSE} {MARKET_TZ})"
+        )
+        sys.exit(0)
+
     start, end = tu.compute_window(now_local, WINDOW_MIN)
 
     if not API_KEY:

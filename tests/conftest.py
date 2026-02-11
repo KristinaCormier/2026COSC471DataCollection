@@ -201,7 +201,11 @@ def mock_execute_values(monkeypatch):
 def mock_error_log_dir(tmp_path, monkeypatch):
     """Mock ERROR_LOG_DIR to use temp directory instead of /usr/local/dc_error_logs."""
     from src import logging_utils
+    from src import intraday_data_collection
     
     error_log_dir = tmp_path / "dc_error_logs"
+    # Patch the module directly
     monkeypatch.setattr(logging_utils, "ERROR_LOG_DIR", error_log_dir)
+    # Also patch the reference in intraday_data_collection.lu
+    monkeypatch.setattr(intraday_data_collection.lu, "ERROR_LOG_DIR", error_log_dir)
     return error_log_dir
