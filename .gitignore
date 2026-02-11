@@ -23,6 +23,7 @@ ENV/
 .env.*
 *.env
 .collector_env
+!.env.template
 
 # --------------------
 # Testing
