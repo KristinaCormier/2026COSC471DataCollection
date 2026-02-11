@@ -83,7 +83,7 @@ def test_main_exits_when_db_connection_fails(mock_env_complete, monkeypatch, cap
     def mock_db_connect_fail(host, port, dbname, user, password):
         raise Exception("Connection refused")
     
-    monkeypatch.setattr(dbu, "db_connect", mock_db_connect_fail)
+    monkeypatch.setattr(collector.dbu, "db_connect", mock_db_connect_fail)
     
     # When: Running main() and expecting system exit (¬Q)
     with pytest.raises(SystemExit) as exc_info:
@@ -105,7 +105,7 @@ def test_main_successful_execution(mock_env_complete, mock_successful_api, monke
     def mock_db_connect(host, port, dbname, user, password):
         return mock_conn
     
-    monkeypatch.setattr(dbu, "db_connect", mock_db_connect)
+    monkeypatch.setattr(collector.dbu, "db_connect", mock_db_connect)
     
     # When: Running main()
     collector.main()
@@ -138,7 +138,7 @@ def test_main_continues_after_symbol_error(mock_env_complete, monkeypatch, capsy
             raise Exception("API rate limit exceeded")
         return 5  # Successful for other symbols
     
-    monkeypatch.setattr(dbu, "db_connect", mock_db_connect)
+    monkeypatch.setattr(collector.dbu, "db_connect", mock_db_connect)
     monkeypatch.setattr(collector, "fetch_and_insert", mock_fetch_and_insert)
     
     # When: Running main()
@@ -181,7 +181,7 @@ def test_main_loads_env_vars_at_runtime(monkeypatch, capsys, mock_error_log_dir)
     def mock_fetch_and_insert(conn, symbol, start, end):
         return 0
     
-    monkeypatch.setattr(dbu, "db_connect", mock_db_connect)
+    monkeypatch.setattr(collector.dbu, "db_connect", mock_db_connect)
     monkeypatch.setattr(collector, "fetch_and_insert", mock_fetch_and_insert)
     
     # When: Running main()
@@ -207,7 +207,7 @@ def test_main_computes_time_window(mock_env_complete, monkeypatch, capsys, mock_
         captured_window["end"] = end
         return 0
     
-    monkeypatch.setattr(dbu, "db_connect", mock_db_connect)
+    monkeypatch.setattr(collector.dbu, "db_connect", mock_db_connect)
     monkeypatch.setattr(collector, "fetch_and_insert", mock_fetch_and_insert)
     
     # When: Running main()
