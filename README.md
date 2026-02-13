@@ -1,9 +1,13 @@
 FMP 5-Minute Market Data Collector
 Overview
 
-This Python script pulls 5-minute OHLCV stock data from the Financial Modeling Prep (FMP) API and loads it into PostgreSQL staging tables.
+This project provides tools for collecting and loading stock market data into PostgreSQL:
 
-On each run, it:
+1. **Real-time Collection** (`auto_data_collection.py`): Pulls 5-minute OHLCV stock data from the Financial Modeling Prep (FMP) API and loads it into PostgreSQL staging tables. Designed to run hourly via a scheduler (e.g., cron).
+
+2. **Historical Data Loader** (`load_historical_data.py`): Loads historical OHLCV data from CSV files into the same PostgreSQL staging tables. Used for backfilling historical data or importing data from other sources.
+
+On each run of the real-time collector, it:
 
 Calculates a time window from the current hour to the latest 5-minute interval
 
@@ -12,8 +16,6 @@ Retrieves intraday bars for each symbol
 Filters results to the window
 
 Inserts/updates rows in PostgreSQL
-
-The script is designed to run hourly via a scheduler (e.g., cron).
 
 Requirements
 
@@ -59,8 +61,15 @@ CREATE TABLE market.aapl (
 
 The UNIQUE(date) constraint is required for UPSERT.
 
-Running the Script
+Running the Scripts
+
+Real-time Data Collection:
 python src/auto_data_collection.py
+
+Historical Data Loading:
+python src/load_historical_data.py --csv path/to/historical.csv
+
+For detailed documentation on the historical data loader, see: docs/load_historical_data.md
 
 Common Issues
 
