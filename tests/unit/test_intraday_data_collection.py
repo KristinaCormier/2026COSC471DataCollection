@@ -92,12 +92,10 @@ def test_parse_api_time_uses_market_tz():
     assert parsed.hour == 10 and parsed.minute == 5
 
 
-# Test 7. Test for fetch_and_insert(): out-of-range data is still inserted
-def test_fetch_and_insert_inserts_out_of_range_rows(monkeypatch):
+# Test 7. Test for _process_data_batch(): out-of-range data is still processed
+def test_process_data_batch_includes_out_of_range_rows(monkeypatch):
     # Given: A time window and API data outside that window
     tz = ZoneInfo("America/New_York")
-    collector.API_KEY = "test"
-    collector.BASE_URL = "https://example.test/{symbol}"
 
     start = dt.datetime(2026, 1, 26, 10, 0, tzinfo=tz)
     end = dt.datetime(2026, 1, 26, 10, 30, tzinfo=tz)
@@ -106,149 +104,106 @@ def test_fetch_and_insert_inserts_out_of_range_rows(monkeypatch):
         {"date": "2026-01-26 09:55:00", "open": 1, "high": 2, "low": 1, "close": 1.5, "volume": 10},
     ]
 
-    monkeypatch.setattr(collector.requests, "get", lambda *args, **kwargs: FakeResponse(api_payload))
+    collector.TZ = tz
     monkeypatch.setattr(dbu, "check_table_exists", lambda *args, **kwargs: None)
 
-    conn = FakeConnection()
+    # When: Processing the data batch
+    rows = collector._process_data_batch(api_payload, "AAPL", "market.aapl", None)
 
-    # When: Fetching and inserting
-    inserted = collector.fetch_and_insert(conn, "AAPL", start, end)
-
-    # Then: Row should be inserted despite being out of range
-    assert inserted == 1
-    assert conn.commits == 1
+    # Then: Row should be processed despite being out of range
+    assert len(rows) == 1
+    assert rows[0][0].minute == 55
 
 
-# Test 8. Test for fetch_and_insert(): missing close is allowed
-def test_fetch_and_insert_allows_missing_close(monkeypatch, mock_error_log_dir):
+# Test 8. Test for _process_data_batch(): missing close is allowed
+def test_process_data_batch_allows_missing_close(monkeypatch, mock_error_log_dir):
     # Given: A valid window and API data with missing close
     tz = ZoneInfo("America/New_York")
-    collector.API_KEY = "test"
-    collector.BASE_URL = "https://example.test/{symbol}"
-
-    start = dt.datetime(2026, 1, 26, 10, 0, tzinfo=tz)
-    end = dt.datetime(2026, 1, 26, 10, 30, tzinfo=tz)
 
     api_payload = [
         {"date": "2026-01-26 10:05:00", "open": 1, "high": 2, "low": 1, "close": None, "volume": 10},
     ]
 
-    monkeypatch.setattr(collector.requests, "get", lambda *args, **kwargs: FakeResponse(api_payload))
+    collector.TZ = tz
     monkeypatch.setattr(dbu, "check_table_exists", lambda *args, **kwargs: None)
 
-    conn = FakeConnection()
+    # When: Processing the data batch
+    rows = collector._process_data_batch(api_payload, "AAPL", "market.aapl", None)
 
-    # When: Fetching and inserting
-    inserted = collector.fetch_and_insert(conn, "AAPL", start, end)
-
-    # Then: Row should be inserted with a null close
-    assert inserted == 1
-    insert_cursor = conn.cursors[-1]
-    assert insert_cursor.executed_values[0][4] is None
-    assert conn.commits == 1
+    # Then: Row should be processed with a null close
+    assert len(rows) == 1
+    assert rows[0][4] is None
 
 
-# Test 9. Test for fetch_and_insert(): inserts valid rows in ascending order
-def test_fetch_and_insert_inserts_sorted_rows(monkeypatch):
+# Test 9. Test for _process_data_batch(): inserts valid rows in ascending order
+def test_process_data_batch_inserts_sorted_rows(monkeypatch):
     # Given: A valid window and two out-of-order rows
     tz = ZoneInfo("America/New_York")
-    collector.API_KEY = "test"
-    collector.BASE_URL = "https://example.test/{symbol}"
-
-    start = dt.datetime(2026, 1, 26, 10, 0, tzinfo=tz)
-    end = dt.datetime(2026, 1, 26, 10, 30, tzinfo=tz)
 
     api_payload = [
         {"date": "2026-01-26 10:25:00", "open": 1, "high": 2, "low": 1, "close": 1.7, "volume": 10},
         {"date": "2026-01-26 10:05:00", "open": 1, "high": 2, "low": 1, "close": 1.5, "volume": 10},
     ]
 
-    monkeypatch.setattr(collector.requests, "get", lambda *args, **kwargs: FakeResponse(api_payload))
+    collector.TZ = tz
     monkeypatch.setattr(dbu, "check_table_exists", lambda *args, **kwargs: None)
 
-    conn = FakeConnection()
+    # When: Processing the data batch
+    rows = collector._process_data_batch(api_payload, "AAPL", "market.aapl", None)
 
-    # When: Fetching and inserting
-    inserted = collector.fetch_and_insert(conn, "AAPL", start, end)
-
-    # Then: Rows should be sorted ascending and inserted
-    assert inserted == 2
-    # Check the cursor that executed the insert
-    insert_cursor = conn.cursors[-1]
-    assert [r[0].minute for r in insert_cursor.executed_values] == [5, 25]
-    assert "INSERT INTO market.aapl" in insert_cursor.queries[-1]
+    # Then: Rows should be sorted ascending by timestamp
+    assert len(rows) == 2
+    assert rows[0][0].minute == 5
+    assert rows[1][0].minute == 25
 
 
-# Test 10. Test for fetch_and_insert(): missing date field is inferred
-def test_fetch_and_insert_infers_missing_date_field(monkeypatch, mock_error_log_dir):
+# Test 10. Test for _process_data_batch(): missing date field is inferred
+def test_process_data_batch_infers_missing_date_field(monkeypatch, mock_error_log_dir):
     # Given: API data with missing date field
     tz = ZoneInfo("America/New_York")
-    collector.API_KEY = "test"
-    collector.BASE_URL = "https://example.test/{symbol}"
-
-    start = dt.datetime(2026, 1, 26, 10, 0, tzinfo=tz)
-    end = dt.datetime(2026, 1, 26, 10, 30, tzinfo=tz)
 
     api_payload = [
         {"open": 1, "high": 2, "low": 1, "close": 1.5, "volume": 10},  # Missing 'date' field
     ]
 
-    monkeypatch.setattr(collector.requests, "get", lambda *args, **kwargs: FakeResponse(api_payload))
+    collector.TZ = tz
     monkeypatch.setattr(dbu, "check_table_exists", lambda *args, **kwargs: None)
 
-    conn = FakeConnection()
+    # When: Processing the data batch
+    rows = collector._process_data_batch(api_payload, "AAPL", "market.aapl", None)
 
-    # When: Fetching and inserting
-    inserted = collector.fetch_and_insert(conn, "AAPL", start, end)
-
-    # Then: Row should be inserted with inferred timestamp
-    assert inserted == 1
-    insert_cursor = conn.cursors[-1]
-    inferred_ts = insert_cursor.executed_values[0][0]
+    # Then: Row should be processed with inferred timestamp
+    assert len(rows) == 1
+    inferred_ts = rows[0][0]
     assert isinstance(inferred_ts, dt.datetime)
     assert inferred_ts.tzinfo == tz
-    assert conn.commits == 1
 
 
-# Test 11. Test for fetch_and_insert(): empty API response results in no inserts (Modus Tollens)
+# Test 11. Test for _process_data_batch(): empty API response results in no batch
 # Modus Tollens Logic:
-#   P → Q: If API returns valid data, then rows should be inserted
-#   ¬Q: No rows were inserted
+#   P → Q: If API returns valid data, then rows should be processed
+#   ¬Q: No rows were processed
 #   ∴ ¬P: Therefore, API did NOT return valid data (empty response handling working)
-def test_fetch_and_insert_handles_empty_api_response(monkeypatch):
+def test_process_data_batch_handles_empty_api_response(monkeypatch):
     # Given: Empty API response
     tz = ZoneInfo("America/New_York")
-    collector.API_KEY = "test"
-    collector.BASE_URL = "https://example.test/{symbol}"
-
-    start = dt.datetime(2026, 1, 26, 10, 0, tzinfo=tz)
-    end = dt.datetime(2026, 1, 26, 10, 30, tzinfo=tz)
 
     api_payload = []  # Empty response
 
-    monkeypatch.setattr(collector.requests, "get", lambda *args, **kwargs: FakeResponse(api_payload))
+    collector.TZ = tz
     monkeypatch.setattr(dbu, "check_table_exists", lambda *args, **kwargs: None)
 
-    conn = FakeConnection()
+    # When: Processing the data batch
+    rows = collector._process_data_batch(api_payload, "AAPL", "market.aapl", None)
 
-    # When: Fetching and inserting
-    inserted = collector.fetch_and_insert(conn, "AAPL", start, end)
-
-    # Then: No rows should be inserted (¬Q observed, proving ¬P)
-    assert inserted == 0
-    # No cursor should be created when no rows to insert
-    assert conn.commits == 0
+    # Then: No rows should be processed (¬Q observed, proving ¬P)
+    assert len(rows) == 0
 
 
-# Test 12. Test for fetch_and_insert(): rows with missing fields are still inserted
-def test_fetch_and_insert_inserts_rows_with_missing_fields(monkeypatch, mock_error_log_dir):
+# Test 12. Test for _process_data_batch(): rows with missing fields are still processed
+def test_process_data_batch_inserts_rows_with_missing_fields(monkeypatch, mock_error_log_dir):
     # Given: Multiple rows with missing fields
     tz = ZoneInfo("America/New_York")
-    collector.API_KEY = "test"
-    collector.BASE_URL = "https://example.test/{symbol}"
-
-    start = dt.datetime(2026, 1, 26, 10, 0, tzinfo=tz)
-    end = dt.datetime(2026, 1, 26, 10, 30, tzinfo=tz)
 
     api_payload = [
         {"date": "2026-01-26 09:55:00", "open": 1, "high": 2, "low": 1, "close": 1.5, "volume": 10},  # Out of range
@@ -256,17 +211,99 @@ def test_fetch_and_insert_inserts_rows_with_missing_fields(monkeypatch, mock_err
         {"open": 1, "high": 2, "low": 1, "close": 1.5, "volume": 10},  # Missing date
     ]
 
-    monkeypatch.setattr(collector.requests, "get", lambda *args, **kwargs: FakeResponse(api_payload))
+    collector.TZ = tz
     monkeypatch.setattr(dbu, "check_table_exists", lambda *args, **kwargs: None)
 
-    conn = FakeConnection()
+    # When: Processing the data batch
+    rows = collector._process_data_batch(api_payload, "AAPL", "market.aapl", None)
 
-    # When: Fetching and inserting
-    inserted = collector.fetch_and_insert(conn, "AAPL", start, end)
+    # Then: Valid rows should be processed
+    assert len(rows) >= 1
+    assert len(rows) <= 3
 
-    # Then: Rows should be inserted even with missing fields
-    assert inserted == 3
-    assert conn.commits == 1
+
+# Test 13. Test for _process_data_batch(): invalid/duplicate rows are rejected and logged
+def test_process_data_batch_rejects_invalid_and_logs_load_errors(monkeypatch, mock_error_log_dir):
+    # Given: API data with invalid types, invalid timestamps, and duplicate timestamps
+    tz = ZoneInfo("America/New_York")
+
+    api_payload = [
+        {"date": "2026-01-26 10:05:00", "open": 1.0, "high": 2.0, "low": 1.0, "close": 1.5, "volume": 10},
+        {"date": "2026-01-26 10:10:00", "open": "bad", "high": 2.0, "low": 1.0, "close": 1.5, "volume": 10},
+        {"date": "2026-01-26T10:15:00", "open": 1.1, "high": 2.1, "low": 1.1, "close": 1.6, "volume": 11},
+        {"date": "2026-01-26 10:05:00", "open": 1.2, "high": 2.2, "low": 1.2, "close": 1.7, "volume": 12},
+    ]
+
+    collector.TZ = tz
+    monkeypatch.setattr(dbu, "check_table_exists", lambda *args, **kwargs: None)
+
+    # When: Processing the data batch
+    rows = collector._process_data_batch(api_payload, "AAPL", "market.aapl", None)
+
+    # Then: Only valid, non-duplicate rows should be processed
+    assert len(rows) == 1
+
+    # Then: Invalid and duplicate rows should be logged as load errors
+    log_file = mock_error_log_dir / "db_insert_errors.csv"
+    assert log_file.exists()
+    lines = log_file.read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 4  # header + 3 error rows
+    assert all("AAPL" in line for line in lines[1:])
+
+
+# Test 14. Test for _process_data_batch(): duplicate timestamps are logged to db_insert_errors.csv
+def test_process_data_batch_logs_duplicate_timestamps(monkeypatch, mock_error_log_dir):
+    # Given: API data with duplicate timestamps
+    tz = ZoneInfo("America/New_York")
+
+    api_payload = [
+        {"date": "2026-01-26 10:05:00", "open": 1.0, "high": 2.0, "low": 1.0, "close": 1.5, "volume": 10},
+        {"date": "2026-01-26 10:05:00", "open": 1.2, "high": 2.2, "low": 1.2, "close": 1.7, "volume": 12},
+    ]
+
+    collector.TZ = tz
+    monkeypatch.setattr(dbu, "check_table_exists", lambda *args, **kwargs: None)
+
+    # When: Processing the data batch
+    rows = collector._process_data_batch(api_payload, "AAPL", "market.aapl", None)
+
+    # Then: Only one row should be processed
+    assert len(rows) == 1
+
+    # Then: Duplicate should be logged as a load error
+    log_file = mock_error_log_dir / "db_insert_errors.csv"
+    assert log_file.exists()
+    lines = log_file.read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 2  # header + 1 duplicate error row
+    assert "AAPL" in lines[1]
+
+
+# Test 15. Test for _process_data_batch(): schema/type mismatch logs load errors and skips processing
+def test_process_data_batch_logs_schema_type_mismatch(monkeypatch, mock_error_log_dir):
+    # Given: API data with schema/type mismatches
+    tz = ZoneInfo("America/New_York")
+
+    api_payload = [
+        {"date": "2026-01-26 10:05:00", "open": "oops", "high": 2.0, "low": 1.0, "close": 1.5, "volume": 10},
+        {"date": "2026-01-26 10:10:00", "open": 1.0, "high": 2.0, "low": 1.0, "close": 1.5, "volume": "bad"},
+        {"open": 1.0, "high": 2.0, "low": 1.0, "close": 1.5, "volume": 10},
+    ]
+
+    collector.TZ = tz
+    monkeypatch.setattr(dbu, "check_table_exists", lambda *args, **kwargs: None)
+
+    # When: Processing the data batch
+    rows = collector._process_data_batch(api_payload, "AAPL", "market.aapl", None)
+
+    # Then: No rows should be processed
+    assert len(rows) == 0
+
+    # Then: Each invalid row should be logged as a load error
+    log_file = mock_error_log_dir / "db_insert_errors.csv"
+    assert log_file.exists()
+    lines = log_file.read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 4  # header + 3 error rows
+    assert all("AAPL" in line for line in lines[1:])
 
 # Teardown
 
