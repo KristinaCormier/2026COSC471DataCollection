@@ -41,6 +41,7 @@ PGPASSWORD = os.environ.get("PGPASSWORD", "")
 BASE_URL = "https://financialmodelingprep.com/api/v3/historical-chart/5min/{symbol}"
 
 DATA_FIELDS = ("date", "open", "high", "low", "close", "volume")
+REQUIRED_NUMERIC_FIELDS = ("open", "high", "low", "volume")
 
 # cleanup symbols
 SYMBOLS = [s.strip() for s in SYMBOLS if s.strip()]
@@ -48,29 +49,197 @@ SYMBOLS = [s.strip() for s in SYMBOLS if s.strip()]
 # timezone handling
 TZ = ZoneInfo(MARKET_TZ)
 
-#  API Fetch and insert into Postgres
-def fetch_and_insert(conn, symbol: str, start: dt.datetime, end: dt.datetime, now_local: dt.datetime | None = None):
+
+def _coerce_float(value) -> tuple[float | None, bool]:
+    """
+    Attempt to coerce a value to float.
     
-    day_from = tu.ymd(min(start.date(), end.date())) 
-    day_to   = tu.ymd(max(start.date(), end.date())) 
+    Returns:
+        Tuple of (coerced_value, success)
+    """
+    if value is None:
+        return None, False
+    if isinstance(value, bool):
+        return None, False
+    if isinstance(value, (int, float)):
+        return float(value), True
+    if isinstance(value, str):
+        try:
+            return float(value), True
+        except ValueError:
+            return None, False
+    return None, False
+
+
+def _build_insert_statement(table: str) -> str:
+    """
+    Build the UPSERT SQL statement for stock data.
+    
+    Args:
+        table: Qualified table name (e.g., 'market.aapl')
+    
+    Returns:
+        SQL string ready for executemany
+    """
+    return f"""
+        INSERT INTO {table} (date, open, high, low, close, volume)
+        VALUES (%s, %s, %s, %s, %s, %s)
+        ON CONFLICT (date) DO UPDATE
+          SET open   = EXCLUDED.open,
+              high   = EXCLUDED.high,
+              low    = EXCLUDED.low,
+              close  = EXCLUDED.close,
+              volume = EXCLUDED.volume
+    """
+
+
+def _validate_and_parse_row(
+    row: dict,
+    symbol: str,
+    table: str,
+    hard_invalid_found: bool,
+    last_ts: dt.datetime | None,
+    now_local: dt.datetime | None,
+    tz: ZoneInfo,
+) -> tuple[dt.datetime | None, dict | None, bool]:
+    """
+    Validate and parse a single row from API data.
+    
+    Checks for all-empty fields, timestamp validity, and schema/type compliance.
+    Logs errors to db_insert_errors for invalid rows.
+    
+    Args:
+        row: Raw API row dictionary
+        symbol: Stock symbol being processed
+        table: Target table name
+        hard_invalid_found: Whether any hard invalids found so far in batch
+        last_ts: Previous row's timestamp (for inference)
+        now_local: Current wall-clock time (for inference)
+        tz: Timezone for timestamps
+    
+    Returns:
+        Tuple of (timestamp, parsed_values_dict, updated_hard_invalid_found)
+        or (None, None, hard_invalid_found) if row rejected
+    """
+    missing_fields, all_empty = dv.analyze_row(row, DATA_FIELDS)
+    if all_empty:
+        lu.log_db_error(
+            symbol=symbol,
+            operation="LOAD",
+            error_type="AllFieldsEmpty",
+            error_message="all fields empty",
+            table_name=table,
+            row_count=1,
+            tz=tz,
+        )
+        return None, None, True
+
+    ts_str = row.get("date")
+    ts_exch = None
+
+    # handle missing/invalid timestamp
+    if dv.is_empty(ts_str):
+        if hard_invalid_found:
+            lu.log_db_error(
+                symbol=symbol,
+                operation="LOAD",
+                error_type="MissingDate",
+                error_message="date field missing",
+                table_name=table,
+                row_count=1,
+                tz=tz,
+            )
+            return None, None, hard_invalid_found
+        ts_exch, _ = tu.infer_timestamp(last_ts, now_local, "date_missing", tz)
+    else:
+        try:
+            ts_exch = tu.parse_api_time(ts_str, tz)
+        except Exception:
+            lu.log_db_error(
+                symbol=symbol,
+                operation="LOAD",
+                error_type="InvalidTimestamp",
+                error_message="invalid timestamp format",
+                table_name=table,
+                row_count=1,
+                tz=tz,
+            )
+            return None, None, True
+
+    # enforce schema/types before insertion
+    invalid_fields = []
+    parsed = {}
+    for field in REQUIRED_NUMERIC_FIELDS:
+        val = row.get(field)
+        if dv.is_empty(val):
+            invalid_fields.append(field)
+            continue
+        num, ok = _coerce_float(val)
+        if not ok:
+            invalid_fields.append(field)
+            continue
+        parsed[field] = num
+
+    close_val = row.get("close")
+    if dv.is_empty(close_val):
+        parsed["close"] = None
+    else:
+        num, ok = _coerce_float(close_val)
+        if not ok:
+            invalid_fields.append("close")
+        else:
+            parsed["close"] = num
+
+    if invalid_fields:
+        lu.log_db_error(
+            symbol=symbol,
+            operation="LOAD",
+            error_type="SchemaTypeMismatch",
+            error_message=f"invalid fields: {','.join(sorted(set(invalid_fields)))}",
+            table_name=table,
+            row_count=1,
+            tz=tz,
+        )
+        return None, None, True
+
+    return ts_exch, parsed, hard_invalid_found
+
+
+def _fetch_api_data(
+    symbol: str,
+    start: dt.datetime,
+    end: dt.datetime,
+) -> list[dict]:
+    """
+    Fetch stock data from API.
+    
+    Single responsibility: API communication layer.
+    Raises on network or API errors.
+    
+    Args:
+        symbol: Stock symbol
+        start: Start time for data window
+        end: End time for data window
+    
+    Returns:
+        List of raw API data rows
+    """
+    day_from = tu.ymd(min(start.date(), end.date()))
+    day_to = tu.ymd(max(start.date(), end.date()))
     url = BASE_URL.format(symbol=symbol)
     params = {"from": day_from, "to": day_to, "extended": "true", "apikey": API_KEY}
 
-    print(
-        f"\n   Calling API with symbol = {symbol}   Window Used: {start} -> {end}  (from {day_from} to {day_to}) ---"
-    )
-
     try:
-        r = requests.get(url, params=params, timeout=25)  # GET API data
+        r = requests.get(url, params=params, timeout=25)
         r.raise_for_status()
-        data = r.json() if r.content else []
+        return r.json() if r.content else []
     except requests.exceptions.HTTPError as e:
         lu.log_api_error(
             symbol=symbol,
             url=url,
             error_type="HTTPError",
             error_message=str(e),
-            status_code=r.status_code if hasattr(r, 'status_code') else None,
+            status_code=r.status_code if hasattr(r, "status_code") else None,
             tz=TZ,
         )
         raise
@@ -92,91 +261,102 @@ def fetch_and_insert(conn, symbol: str, start: dt.datetime, end: dt.datetime, no
             tz=TZ,
         )
         raise
-    # Recently added - Liam
-    print("API returned rows:", len(data))
-    if data:
-        print("First:", data[0].get("date"), "Last:", data[-1].get("date"))
 
-    # Filter to the requested window and prepare rows for DB
+
+def _process_data_batch(
+    data: list[dict],
+    symbol: str,
+    table: str,
+    now_local: dt.datetime | None,
+) -> list[tuple]:
+    """
+    Process, validate, and deduplicate raw API data.
+    
+    Single responsibility: data processing and filtering layer.
+    Returns validated, de-duplicated data ready for insertion.
+    
+    Args:
+        data: Raw API data rows
+        symbol: Stock symbol
+        table: Target table name
+        now_local: Current wall-clock time for timestamp inference
+    
+    Returns:
+        List of validated tuples ready for database insertion
+    """
+    hard_invalid_found = False
     rows = []
     last_ts = None
-    for row in data: # loop through json response
-        missing_fields, all_empty = dv.analyze_row(row, DATA_FIELDS)
-        if all_empty:
-            lu.log_validation_error(
-                symbol=symbol,
-                row_data=row,
-                missing_fields=missing_fields,
-                reason="all_fields_empty",
-                tz=TZ,
-            )
+    seen_ts: set[dt.datetime] = set()
+
+    for row in data:
+        ts_exch, parsed, hard_invalid_found = _validate_and_parse_row(
+            row, symbol, table, hard_invalid_found, last_ts, now_local, TZ
+        )
+        if ts_exch is None:
             continue
 
-        ts_str = row.get("date")
-        ts_exch = None
-        inferred_reason = None
-        inferred_date = None
-
-        # handle missing/invalid timestamp
-        if dv.is_empty(ts_str):
-            ts_exch, inferred_reason = tu.infer_timestamp(last_ts, now_local, "date_missing", TZ)
-            inferred_date = ts_exch
-            missing_fields = list(set(missing_fields + ["date"]))
-        else:
-            try:
-                ts_exch = tu.parse_api_time(ts_str, TZ)
-            except Exception:
-                ts_exch, inferred_reason = tu.infer_timestamp(last_ts, now_local, "date_invalid", TZ)
-                inferred_date = ts_exch
-                missing_fields = list(set(missing_fields + ["date"]))
-
-        if ts_exch is not None:
-            last_ts = ts_exch
-
-        if missing_fields or inferred_reason:
-            lu.log_validation_error(
+        # Check for duplicate timestamp in batch
+        if ts_exch in seen_ts:
+            lu.log_db_error(
                 symbol=symbol,
-                row_data=row,
-                missing_fields=missing_fields,
-                inferred_date=inferred_date,
-                reason=inferred_reason,
+                operation="LOAD",
+                error_type="DuplicateTimestamp",
+                error_message="duplicate timestamp in batch",
+                table_name=table,
+                row_count=1,
                 tz=TZ,
             )
+            hard_invalid_found = True
+            continue
 
-        # grab all data fields from api 
-        open_val   = row.get("open")
-        high_val   = row.get("high")
-        low_val    = row.get("low")
-        close_val  = row.get("close")
-        volume_val = row.get("volume")
-
-        # append data to rows list 
-        rows.append((ts_exch, open_val, high_val, low_val, close_val, volume_val))
+        seen_ts.add(ts_exch)
+        last_ts = ts_exch
+        rows.append(
+            (
+                ts_exch,
+                parsed["open"],
+                parsed["high"],
+                parsed["low"],
+                parsed["close"],
+                parsed["volume"],
+            )
+        )
 
     rows.sort(key=lambda x: x[0])  # sort rows ascending by timestamp
+    return rows
 
+
+def _insert_batch(
+    conn,
+    table: str,
+    rows: list[tuple],
+    symbol: str,
+) -> int:
+    """
+    Insert validated rows into database.
+    
+    Single responsibility: database layer.
+    Handles table existence check and UPSERT operation.
+    
+    Args:
+        conn: Database connection
+        table: Target table name
+        rows: Validated data tuples ready for insertion
+        symbol: Stock symbol (for error logging)
+    
+    Returns:
+        Number of rows inserted/upserted
+    """
     if not rows:
-        print("(no 5 minute bars in this window)")
         return 0
 
-    table = dbu.safe_table_name_for_symbol(symbol)
     dbu.check_table_exists(conn, table)
 
-    # UPSERT with all columns (ts remains the conflict target)*updated from ts to date on two lines below to match db schema*
-    insert_sql = f"""
-        INSERT INTO {table} (date, open, high, low, close, volume)
-        VALUES %s
-        ON CONFLICT (date) DO UPDATE
-          SET open   = EXCLUDED.open,
-              high   = EXCLUDED.high,
-              low    = EXCLUDED.low,
-              close  = EXCLUDED.close,
-              volume = EXCLUDED.volume
-    """
-    # Execute sql query on postgres
+    insert_sql = _build_insert_statement(table)
     try:
         with conn.cursor() as cur:
-            cur.executemany(insert_sql.replace("VALUES %s", "VALUES (%s, %s, %s, %s, %s, %s)"), rows)
+            cur.executemany(insert_sql, rows)
         conn.commit()
     except psycopg.Error as e:
         lu.log_db_error(
@@ -188,10 +368,12 @@ def fetch_and_insert(conn, symbol: str, start: dt.datetime, end: dt.datetime, no
             row_count=len(rows),
             tz=TZ,
         )
-        raise 
+        raise
 
     print(f"inserted/upserted {len(rows)} rows into {table}")
     return len(rows)
+
+
 
 
 def main():
@@ -225,14 +407,21 @@ def main():
         print(f"error: invalid market hours: {e}", file=sys.stderr)
         sys.exit(1)
 
-    if not tu.is_market_open(now_local, market_open_time, market_close_time):
+    start, end = tu.compute_window(now_local, WINDOW_MIN)
+    
+    # Clamp window to market hours (open to close times)
+    market_open_dt = now_local.replace(hour=market_open_time.hour, minute=market_open_time.minute, second=0, microsecond=0)
+    market_close_dt = now_local.replace(hour=market_close_time.hour, minute=market_close_time.minute, second=0, microsecond=0)
+    start = max(start, market_open_dt)
+    end = min(end, market_close_dt)
+    
+    # If window is entirely outside market hours, skip collection
+    if start >= end:
         print(
-            "[info] market closed; skipping collection "
-            f"(hours {MARKET_OPEN}-{MARKET_CLOSE} {MARKET_TZ})"
+            "[info] computed window falls outside market hours "
+            f"({MARKET_OPEN}-{MARKET_CLOSE} {MARKET_TZ}); skipping collection"
         )
         sys.exit(0)
-
-    start, end = tu.compute_window(now_local, WINDOW_MIN)
 
     if not API_KEY:
         print("error: API key is missing; ensure FMP_API_KEY is set", file=sys.stderr)
@@ -259,9 +448,32 @@ def main():
         sys.exit(2)
 
     total = 0
+    day_from = tu.ymd(min(start.date(), end.date()))
+    day_to = tu.ymd(max(start.date(), end.date()))
     for sym in SYMBOLS:
         try:
-            total += fetch_and_insert(conn, sym, start, end)
+            print(
+                f"\n   Calling API with symbol = {sym}   Window Used: {start} -> {end}  (from {day_from} to {day_to}) ---"
+            )
+
+            # Step 1: Fetch data from API
+            data = _fetch_api_data(sym, start, end)
+
+            print("API returned rows:", len(data))
+            if data:
+                print("First:", data[0].get("date"), "Last:", data[-1].get("date"))
+
+            # Step 2: Get table name for symbol
+            table = dbu.safe_table_name_for_symbol(sym)
+
+            # Step 3: Process and validate batch
+            rows = _process_data_batch(data, sym, table, now_local)
+
+            if rows:
+                # Step 4: Insert into database
+                total += _insert_batch(conn, table, rows, sym)
+            else:
+                print("(no 5 minute bars in this window)")
         except Exception as e:
             print(f"[error] {sym}: {e}", file=sys.stderr)
 

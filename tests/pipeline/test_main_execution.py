@@ -132,14 +132,14 @@ def test_main_continues_after_symbol_error(mock_env_complete, monkeypatch, capsy
     def mock_db_connect(host, port, dbname, user, password):
         return mock_conn
     
-    def mock_fetch_and_insert(conn, symbol, start, end):
+    def mock_fetch_api_data(symbol, start, end):
         call_count["count"] += 1
         if symbol == "AAPL":
             raise Exception("API rate limit exceeded")
-        return 5  # Successful for other symbols
+        return [{"date": "2026-02-02 10:05:00", "open": 150.0, "high": 151.0, "low": 149.5, "close": 150.5, "volume": 1000000}]
     
     monkeypatch.setattr(collector.dbu, "db_connect", mock_db_connect)
-    monkeypatch.setattr(collector, "fetch_and_insert", mock_fetch_and_insert)
+    monkeypatch.setattr(collector, "_fetch_api_data", mock_fetch_api_data)
     
     # When: Running main()
     collector.main()
@@ -178,11 +178,11 @@ def test_main_loads_env_vars_at_runtime(monkeypatch, capsys, mock_error_log_dir)
         assert collector.PGPORT == 5433
         return mock_conn
     
-    def mock_fetch_and_insert(conn, symbol, start, end):
-        return 0
+    def mock_fetch_api_data(symbol, start, end):
+        return []
     
     monkeypatch.setattr(collector.dbu, "db_connect", mock_db_connect)
-    monkeypatch.setattr(collector, "fetch_and_insert", mock_fetch_and_insert)
+    monkeypatch.setattr(collector, "_fetch_api_data", mock_fetch_api_data)
     
     # When: Running main()
     collector.main()
@@ -202,13 +202,13 @@ def test_main_computes_time_window(mock_env_complete, monkeypatch, capsys, mock_
     def mock_db_connect(host, port, dbname, user, password):
         return mock_conn
     
-    def mock_fetch_and_insert(conn, symbol, start, end):
+    def mock_fetch_api_data(symbol, start, end):
         captured_window["start"] = start
         captured_window["end"] = end
-        return 0
+        return []
     
     monkeypatch.setattr(collector.dbu, "db_connect", mock_db_connect)
-    monkeypatch.setattr(collector, "fetch_and_insert", mock_fetch_and_insert)
+    monkeypatch.setattr(collector, "_fetch_api_data", mock_fetch_api_data)
     
     # When: Running main()
     collector.main()
