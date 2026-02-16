@@ -407,14 +407,21 @@ def main():
         print(f"error: invalid market hours: {e}", file=sys.stderr)
         sys.exit(1)
 
-    if not tu.is_market_open(now_local, market_open_time, market_close_time):
+    start, end = tu.compute_window(now_local, WINDOW_MIN)
+    
+    # Clamp window to market hours (open to close times)
+    market_open_dt = now_local.replace(hour=market_open_time.hour, minute=market_open_time.minute, second=0, microsecond=0)
+    market_close_dt = now_local.replace(hour=market_close_time.hour, minute=market_close_time.minute, second=0, microsecond=0)
+    start = max(start, market_open_dt)
+    end = min(end, market_close_dt)
+    
+    # If window is entirely outside market hours, skip collection
+    if start >= end:
         print(
-            "[info] market closed; skipping collection "
-            f"(hours {MARKET_OPEN}-{MARKET_CLOSE} {MARKET_TZ})"
+            "[info] computed window falls outside market hours "
+            f"({MARKET_OPEN}-{MARKET_CLOSE} {MARKET_TZ}); skipping collection"
         )
         sys.exit(0)
-
-    start, end = tu.compute_window(now_local, WINDOW_MIN)
 
     if not API_KEY:
         print("error: API key is missing; ensure FMP_API_KEY is set", file=sys.stderr)
