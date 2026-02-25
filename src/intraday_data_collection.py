@@ -30,6 +30,7 @@ MARKET_TZ      = os.environ.get("MARKET_TZ", "America/New_York")
 WINDOW_MIN     = int(os.environ.get("WINDOW_MINUTES", "60")) # prevents grabbing large range of data 
 MARKET_OPEN    = os.environ.get("MARKET_OPEN", "04:00")
 MARKET_CLOSE   = os.environ.get("MARKET_CLOSE", "21:00")
+TABLE_NAME     = "stg_raw"
 
 # DB connection vars
 PGHOST = os.environ.get("PGHOST", "")
@@ -82,14 +83,18 @@ def _build_insert_statement(table: str) -> str:
         SQL string ready for executemany
     """
     return f"""
-        INSERT INTO {table} (date, open, high, low, close, volume)
-        VALUES (%s, %s, %s, %s, %s, %s)
-        ON CONFLICT (date) DO UPDATE
-          SET open   = EXCLUDED.open,
+        INSERT INTO {table} (symbol, ts, open, high, low, close, volume, asset_type, source, raw_payload)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (symbol, ts) DO UPDATE
+          SET symbol = EXCLUDED.symbol,            
+              open   = EXCLUDED.open,
               high   = EXCLUDED.high,
               low    = EXCLUDED.low,
               close  = EXCLUDED.close,
-              volume = EXCLUDED.volume
+              volume = EXCLUDED.volume,
+              asset_type = EXCLUDED.asset_type,
+              source = EXCLUDED.source,
+              raw_payload = EXCLUDED.raw_payload
     """
 
 
@@ -463,15 +468,12 @@ def main():
             if data:
                 print("First:", data[0].get("date"), "Last:", data[-1].get("date"))
 
-            # Step 2: Get table name for symbol
-            table = dbu.safe_table_name_for_symbol(sym)
-
-            # Step 3: Process and validate batch
-            rows = _process_data_batch(data, sym, table, now_local)
+            # Step 2: Process and validate batch
+            rows = _process_data_batch(data, sym, TABLE_NAME, now_local)
 
             if rows:
                 # Step 4: Insert into database
-                total += _insert_batch(conn, table, rows, sym)
+                total += _insert_batch(conn, TABLE_NAME, rows, sym)
             else:
                 print("(no 5 minute bars in this window)")
         except Exception as e:
