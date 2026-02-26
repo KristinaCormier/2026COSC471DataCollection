@@ -8,6 +8,7 @@ from __future__ import annotations
 import os
 import datetime as dt
 import sys
+import json
 import requests
 from dotenv import load_dotenv
 from zoneinfo import ZoneInfo
@@ -30,7 +31,7 @@ MARKET_TZ      = os.environ.get("MARKET_TZ", "America/New_York")
 WINDOW_MIN     = int(os.environ.get("WINDOW_MINUTES", "60")) # prevents grabbing large range of data 
 MARKET_OPEN    = os.environ.get("MARKET_OPEN", "04:00")
 MARKET_CLOSE   = os.environ.get("MARKET_CLOSE", "21:00")
-TABLE_NAME     = "stg_raw"
+TABLE_NAME     = "market.stg_raw"
 
 # DB connection vars
 PGHOST = os.environ.get("PGHOST", "")
@@ -40,6 +41,9 @@ PGUSER = os.environ.get("PGUSER", "")
 PGPASSWORD = os.environ.get("PGPASSWORD", "")
 
 BASE_URL = "https://financialmodelingprep.com/api/v3/historical-chart/5min/{symbol}"
+
+ASSET_TYPE = "stock"
+SOURCE = "FMP_intraday"
 
 DATA_FIELDS = ("date", "open", "high", "low", "close", "volume")
 REQUIRED_NUMERIC_FIELDS = ("open", "high", "low", "volume")
@@ -77,7 +81,7 @@ def _build_insert_statement(table: str) -> str:
     Build the UPSERT SQL statement for stock data.
     
     Args:
-        table: Qualified table name (e.g., 'market.aapl')
+        table: raw staging area table name (e.g., 'market.stg_raw')
     
     Returns:
         SQL string ready for executemany
@@ -319,16 +323,20 @@ def _process_data_batch(
         last_ts = ts_exch
         rows.append(
             (
+                symbol,
                 ts_exch,
                 parsed["open"],
                 parsed["high"],
                 parsed["low"],
                 parsed["close"],
                 parsed["volume"],
+                ASSET_TYPE,
+                SOURCE,
+                json.dumps(row),
             )
         )
 
-    rows.sort(key=lambda x: x[0])  # sort rows ascending by timestamp
+    rows.sort(key=lambda x: x[1])  # sort rows ascending by timestamp
     return rows
 
 

@@ -60,7 +60,7 @@ def check_table_exists(conn, table_qualified: str):
     
     Args:
         conn: Database connection
-        table_qualified: Fully qualified table name (e.g., 'market.aapl')
+        table_qualified: Fully qualified table name (e.g., 'market.stg_raw')
     
     Raises:
         RuntimeError: If table does not exist

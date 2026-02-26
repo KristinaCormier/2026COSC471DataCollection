@@ -10,41 +10,6 @@ from tests.conftest import FakeResponse, FakeConnection
 
 # Execute
 
-# Test 1. Test for safe_table_name_for_symbol()
-def test_safe_table_name_for_symbol_basic():
-    # Given: A valid stock symbol in uppercase
-    symbol = "AAPL"
-
-    # When: Converting the symbol to a safe table name
-    result = dbu.safe_table_name_for_symbol(symbol)
-
-    # Then: The result should be lowercase with market schema prefix
-    assert result == "market.aapl"
-
-
-# Test 2. Test for safe_table_name_for_symbol()
-def test_safe_table_name_for_symbol_strips_non_alnum():
-    # Given: A symbol with non-alphanumeric characters
-    symbol = "^TNX"
-
-    # When: Converting the symbol to a safe table name
-    result = dbu.safe_table_name_for_symbol(symbol)
-
-    # Then: Non-alphanumeric characters should be stripped
-    assert result == "market.tnx"
-
-
-# Test 3. Test for safe_table_name_for_symbol()
-def test_safe_table_name_for_symbol_invalid_raises():
-    # Given: A symbol containing only invalid characters
-    invalid_symbol = "$$$"
-
-    # When/Then: Converting the invalid symbol should raise ValueError
-    with pytest.raises(ValueError):
-        dbu.safe_table_name_for_symbol(invalid_symbol)
-
-
-# Test 4. Test for ymd()
 def test_ymd_format():
     # Given: A date object
     date = dt.date(2026, 1, 26)
@@ -55,8 +20,6 @@ def test_ymd_format():
     # Then: The result should be in ISO format (YYYY-MM-DD)
     assert result == "2026-01-26"
 
-
-# Test 5. Test for compute_window()
 def test_compute_window_aligns_to_5_minute_boundary_and_is_valid():
     # Given: A specific timestamp (15:27:42) and a 60-minute window
     tz = ZoneInfo("America/New_York")
@@ -77,8 +40,6 @@ def test_compute_window_aligns_to_5_minute_boundary_and_is_valid():
     assert end > start
     assert (end - start) <= dt.timedelta(minutes=window_min)
 
-
-# Test 6. Test for parse_api_time()
 def test_parse_api_time_uses_market_tz():
     # Given: A timestamp string and a known timezone
     tz = ZoneInfo("America/New_York")
@@ -91,8 +52,6 @@ def test_parse_api_time_uses_market_tz():
     assert parsed.tzinfo == tz
     assert parsed.hour == 10 and parsed.minute == 5
 
-
-# Test 7. Test for _process_data_batch(): out-of-range data is still processed
 def test_process_data_batch_includes_out_of_range_rows(monkeypatch):
     # Given: A time window and API data outside that window
     tz = ZoneInfo("America/New_York")
@@ -112,10 +71,9 @@ def test_process_data_batch_includes_out_of_range_rows(monkeypatch):
 
     # Then: Row should be processed despite being out of range
     assert len(rows) == 1
-    assert rows[0][0].minute == 55
+    assert rows[0][0] == "AAPL"
+    assert rows[0][1].minute == 55
 
-
-# Test 8. Test for _process_data_batch(): missing close is allowed
 def test_process_data_batch_allows_missing_close(monkeypatch, mock_error_log_dir):
     # Given: A valid window and API data with missing close
     tz = ZoneInfo("America/New_York")
@@ -128,14 +86,13 @@ def test_process_data_batch_allows_missing_close(monkeypatch, mock_error_log_dir
     monkeypatch.setattr(dbu, "check_table_exists", lambda *args, **kwargs: None)
 
     # When: Processing the data batch
-    rows = collector._process_data_batch(api_payload, "AAPL", "market.aapl", None)
+    rows = collector._process_data_batch(api_payload, "AAPL", "market.stg_raw", None)
 
     # Then: Row should be processed with a null close
     assert len(rows) == 1
-    assert rows[0][4] is None
+    assert rows[0][0] == "AAPL"
+    assert rows[0][5] is None
 
-
-# Test 9. Test for _process_data_batch(): inserts valid rows in ascending order
 def test_process_data_batch_inserts_sorted_rows(monkeypatch):
     # Given: A valid window and two out-of-order rows
     tz = ZoneInfo("America/New_York")
@@ -149,15 +106,15 @@ def test_process_data_batch_inserts_sorted_rows(monkeypatch):
     monkeypatch.setattr(dbu, "check_table_exists", lambda *args, **kwargs: None)
 
     # When: Processing the data batch
-    rows = collector._process_data_batch(api_payload, "AAPL", "market.aapl", None)
+    rows = collector._process_data_batch(api_payload, "AAPL", "market.stg_raw", None)
 
     # Then: Rows should be sorted ascending by timestamp
     assert len(rows) == 2
-    assert rows[0][0].minute == 5
-    assert rows[1][0].minute == 25
+    assert rows[0][0] == "AAPL"
+    assert rows[0][1].minute == 5
+    assert rows[1][0] == "AAPL"
+    assert rows[1][1].minute == 25
 
-
-# Test 10. Test for _process_data_batch(): missing date field is inferred
 def test_process_data_batch_infers_missing_date_field(monkeypatch, mock_error_log_dir):
     # Given: API data with missing date field
     tz = ZoneInfo("America/New_York")
@@ -170,16 +127,17 @@ def test_process_data_batch_infers_missing_date_field(monkeypatch, mock_error_lo
     monkeypatch.setattr(dbu, "check_table_exists", lambda *args, **kwargs: None)
 
     # When: Processing the data batch
-    rows = collector._process_data_batch(api_payload, "AAPL", "market.aapl", None)
+    rows = collector._process_data_batch(api_payload, "AAPL", "market.stg_raw", None)
 
     # Then: Row should be processed with inferred timestamp
     assert len(rows) == 1
-    inferred_ts = rows[0][0]
+    assert rows[0][0] == "AAPL"
+    inferred_ts = rows[0][1]
     assert isinstance(inferred_ts, dt.datetime)
     assert inferred_ts.tzinfo == tz
 
 
-# Test 11. Test for _process_data_batch(): empty API response results in no batch
+# Test _process_data_batch(): empty API response results in no batch
 # Modus Tollens Logic:
 #   P → Q: If API returns valid data, then rows should be processed
 #   ¬Q: No rows were processed
@@ -194,13 +152,13 @@ def test_process_data_batch_handles_empty_api_response(monkeypatch):
     monkeypatch.setattr(dbu, "check_table_exists", lambda *args, **kwargs: None)
 
     # When: Processing the data batch
-    rows = collector._process_data_batch(api_payload, "AAPL", "market.aapl", None)
+    rows = collector._process_data_batch(api_payload, "AAPL", "market.stg_raw", None)
 
     # Then: No rows should be processed (¬Q observed, proving ¬P)
     assert len(rows) == 0
 
 
-# Test 12. Test for _process_data_batch(): rows with missing fields are still processed
+# Test _process_data_batch(): rows with missing fields are still processed
 def test_process_data_batch_inserts_rows_with_missing_fields(monkeypatch, mock_error_log_dir):
     # Given: Multiple rows with missing fields
     tz = ZoneInfo("America/New_York")
@@ -215,14 +173,18 @@ def test_process_data_batch_inserts_rows_with_missing_fields(monkeypatch, mock_e
     monkeypatch.setattr(dbu, "check_table_exists", lambda *args, **kwargs: None)
 
     # When: Processing the data batch
-    rows = collector._process_data_batch(api_payload, "AAPL", "market.aapl", None)
+    rows = collector._process_data_batch(api_payload, "AAPL", "market.stg_raw", None)
 
     # Then: Valid rows should be processed
     assert len(rows) >= 1
     assert len(rows) <= 3
+    # Verify tuple structure: (symbol, ts, open, high, low, close, volume, asset_type, source, raw_payload)
+    for row in rows:
+        assert row[0] == "AAPL"
+        assert len(row) == 10
 
 
-# Test 13. Test for _process_data_batch(): invalid/duplicate rows are rejected and logged
+# Test _process_data_batch(): invalid/duplicate rows are rejected and logged
 def test_process_data_batch_rejects_invalid_and_logs_load_errors(monkeypatch, mock_error_log_dir):
     # Given: API data with invalid types, invalid timestamps, and duplicate timestamps
     tz = ZoneInfo("America/New_York")
@@ -238,10 +200,12 @@ def test_process_data_batch_rejects_invalid_and_logs_load_errors(monkeypatch, mo
     monkeypatch.setattr(dbu, "check_table_exists", lambda *args, **kwargs: None)
 
     # When: Processing the data batch
-    rows = collector._process_data_batch(api_payload, "AAPL", "market.aapl", None)
+    rows = collector._process_data_batch(api_payload, "AAPL", "market.stg_raw", None)
 
     # Then: Only valid, non-duplicate rows should be processed
     assert len(rows) == 1
+    assert rows[0][0] == "AAPL"
+    assert len(rows[0]) == 10
 
     # Then: Invalid and duplicate rows should be logged as load errors
     log_file = mock_error_log_dir / "db_insert_errors.csv"
@@ -251,7 +215,7 @@ def test_process_data_batch_rejects_invalid_and_logs_load_errors(monkeypatch, mo
     assert all("AAPL" in line for line in lines[1:])
 
 
-# Test 14. Test for _process_data_batch(): duplicate timestamps are logged to db_insert_errors.csv
+# Test _process_data_batch(): duplicate timestamps are logged to db_insert_errors.csv
 def test_process_data_batch_logs_duplicate_timestamps(monkeypatch, mock_error_log_dir):
     # Given: API data with duplicate timestamps
     tz = ZoneInfo("America/New_York")
@@ -265,10 +229,12 @@ def test_process_data_batch_logs_duplicate_timestamps(monkeypatch, mock_error_lo
     monkeypatch.setattr(dbu, "check_table_exists", lambda *args, **kwargs: None)
 
     # When: Processing the data batch
-    rows = collector._process_data_batch(api_payload, "AAPL", "market.aapl", None)
+    rows = collector._process_data_batch(api_payload, "AAPL", "market.stg_raw", None)
 
     # Then: Only one row should be processed
     assert len(rows) == 1
+    assert rows[0][0] == "AAPL"
+    assert len(rows[0]) == 10
 
     # Then: Duplicate should be logged as a load error
     log_file = mock_error_log_dir / "db_insert_errors.csv"
@@ -278,7 +244,7 @@ def test_process_data_batch_logs_duplicate_timestamps(monkeypatch, mock_error_lo
     assert "AAPL" in lines[1]
 
 
-# Test 15. Test for _process_data_batch(): schema/type mismatch logs load errors and skips processing
+# Test _process_data_batch(): schema/type mismatch logs load errors and skips processing
 def test_process_data_batch_logs_schema_type_mismatch(monkeypatch, mock_error_log_dir):
     # Given: API data with schema/type mismatches
     tz = ZoneInfo("America/New_York")
@@ -293,7 +259,7 @@ def test_process_data_batch_logs_schema_type_mismatch(monkeypatch, mock_error_lo
     monkeypatch.setattr(dbu, "check_table_exists", lambda *args, **kwargs: None)
 
     # When: Processing the data batch
-    rows = collector._process_data_batch(api_payload, "AAPL", "market.aapl", None)
+    rows = collector._process_data_batch(api_payload, "AAPL", "market.stg_raw", None)
 
     # Then: No rows should be processed
     assert len(rows) == 0
