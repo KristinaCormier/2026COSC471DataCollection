@@ -43,7 +43,6 @@ PGPASSWORD = os.environ.get("PGPASSWORD", "")
 BASE_URL = "https://financialmodelingprep.com/api/v3/historical-chart/5min/{symbol}"
 
 ASSET_TYPE = "stock"
-SOURCE = "FMP_intraday"
 
 DATA_FIELDS = ("date", "open", "high", "low", "close", "volume")
 REQUIRED_NUMERIC_FIELDS = ("open", "high", "low", "volume")
@@ -213,12 +212,32 @@ def _validate_and_parse_row(
 
     return ts_exch, parsed, hard_invalid_found
 
+def _construct_source_url(
+    symbol: str,
+    start: dt.datetime,
+    end: dt.datetime,
+    ) -> str:
+    """
+    Construct the API URL for a given symbol.
+    
+    Args:
+        symbol: Stock symbol
+    Returns:
+        Fully formatted API URL for the symbol
+    """
+    day_from = tu.ymd(min(start.date(), end.date()))
+    day_to = tu.ymd(max(start.date(), end.date()))
+    url = BASE_URL.format(symbol=symbol)
+    params = {"from": day_from, "to": day_to, "extended": "true"}
+    return f"{url}?{requests.compat.urlencode(params)}"
+
+
 
 def _fetch_api_data(
     symbol: str,
     start: dt.datetime,
-    end: dt.datetime,
-) -> list[dict]:
+    end: dt.datetime
+    ) -> list[dict]:
     """
     Fetch stock data from API.
     
@@ -276,6 +295,7 @@ def _process_data_batch(
     data: list[dict],
     symbol: str,
     table: str,
+    source_url: str,
     now_local: dt.datetime | None,
 ) -> list[tuple]:
     """
@@ -331,7 +351,7 @@ def _process_data_batch(
                 parsed["close"],
                 parsed["volume"],
                 ASSET_TYPE,
-                SOURCE,
+                source_url,
                 json.dumps(row),
             )
         )
@@ -476,8 +496,11 @@ def main():
             if data:
                 print("First:", data[0].get("date"), "Last:", data[-1].get("date"))
 
-            # Step 2: Process and validate batch
-            rows = _process_data_batch(data, sym, TABLE_NAME, now_local)
+            # Step 2: Construct source URL for the source field in the database and for logging purposes
+            source_url = _construct_source_url(sym)
+
+            # Step 3: Process and validate batch
+            rows = _process_data_batch(data, sym, TABLE_NAME, source_url, now_local)
 
             if rows:
                 # Step 4: Insert into database
