@@ -67,7 +67,13 @@ def test_process_data_batch_includes_out_of_range_rows(monkeypatch):
     monkeypatch.setattr(dbu, "check_table_exists", lambda *args, **kwargs: None)
 
     # When: Processing the data batch
-    rows = collector._process_data_batch(api_payload, "AAPL", "market.aapl", None)
+    rows = collector._process_data_batch(
+        api_payload,
+        "AAPL",
+        "market.aapl",
+        None,
+        dt.datetime(2026, 1, 26, 10, 30, tzinfo=tz),
+    )
 
     # Then: Row should be processed despite being out of range
     assert len(rows) == 1
@@ -86,7 +92,13 @@ def test_process_data_batch_allows_missing_close(monkeypatch, mock_error_log_dir
     monkeypatch.setattr(dbu, "check_table_exists", lambda *args, **kwargs: None)
 
     # When: Processing the data batch
-    rows = collector._process_data_batch(api_payload, "AAPL", "market.stg_raw", None)
+    rows = collector._process_data_batch(
+        api_payload,
+        "AAPL",
+        "market.stg_raw",
+        None,
+        dt.datetime(2026, 1, 26, 10, 30, tzinfo=tz),
+    )
 
     # Then: Row should be processed with a null close
     assert len(rows) == 1
@@ -106,7 +118,13 @@ def test_process_data_batch_inserts_sorted_rows(monkeypatch):
     monkeypatch.setattr(dbu, "check_table_exists", lambda *args, **kwargs: None)
 
     # When: Processing the data batch
-    rows = collector._process_data_batch(api_payload, "AAPL", "market.stg_raw", None)
+    rows = collector._process_data_batch(
+        api_payload,
+        "AAPL",
+        "market.stg_raw",
+        None,
+        dt.datetime(2026, 1, 26, 10, 30, tzinfo=tz),
+    )
 
     # Then: Rows should be sorted ascending by timestamp
     assert len(rows) == 2
@@ -127,7 +145,13 @@ def test_process_data_batch_infers_missing_date_field(monkeypatch, mock_error_lo
     monkeypatch.setattr(dbu, "check_table_exists", lambda *args, **kwargs: None)
 
     # When: Processing the data batch
-    rows = collector._process_data_batch(api_payload, "AAPL", "market.stg_raw", None)
+    rows = collector._process_data_batch(
+        api_payload,
+        "AAPL",
+        "market.stg_raw",
+        None,
+        dt.datetime(2026, 1, 26, 10, 30, tzinfo=tz),
+    )
 
     # Then: Row should be processed with inferred timestamp
     assert len(rows) == 1
@@ -152,7 +176,13 @@ def test_process_data_batch_handles_empty_api_response(monkeypatch):
     monkeypatch.setattr(dbu, "check_table_exists", lambda *args, **kwargs: None)
 
     # When: Processing the data batch
-    rows = collector._process_data_batch(api_payload, "AAPL", "market.stg_raw", None)
+    rows = collector._process_data_batch(
+        api_payload,
+        "AAPL",
+        "market.stg_raw",
+        None,
+        dt.datetime(2026, 1, 26, 10, 30, tzinfo=tz),
+    )
 
     # Then: No rows should be processed (¬Q observed, proving ¬P)
     assert len(rows) == 0
@@ -173,7 +203,13 @@ def test_process_data_batch_inserts_rows_with_missing_fields(monkeypatch, mock_e
     monkeypatch.setattr(dbu, "check_table_exists", lambda *args, **kwargs: None)
 
     # When: Processing the data batch
-    rows = collector._process_data_batch(api_payload, "AAPL", "market.stg_raw", None)
+    rows = collector._process_data_batch(
+        api_payload,
+        "AAPL",
+        "market.stg_raw",
+        None,
+        dt.datetime(2026, 1, 26, 10, 30, tzinfo=tz),
+    )
 
     # Then: Valid rows should be processed
     assert len(rows) >= 1
@@ -200,7 +236,13 @@ def test_process_data_batch_rejects_invalid_and_logs_load_errors(monkeypatch, mo
     monkeypatch.setattr(dbu, "check_table_exists", lambda *args, **kwargs: None)
 
     # When: Processing the data batch
-    rows = collector._process_data_batch(api_payload, "AAPL", "market.stg_raw", None)
+    rows = collector._process_data_batch(
+        api_payload,
+        "AAPL",
+        "market.stg_raw",
+        None,
+        dt.datetime(2026, 1, 26, 10, 30, tzinfo=tz),
+    )
 
     # Then: Only valid, non-duplicate rows should be processed
     assert len(rows) == 1
@@ -229,7 +271,13 @@ def test_process_data_batch_logs_duplicate_timestamps(monkeypatch, mock_error_lo
     monkeypatch.setattr(dbu, "check_table_exists", lambda *args, **kwargs: None)
 
     # When: Processing the data batch
-    rows = collector._process_data_batch(api_payload, "AAPL", "market.stg_raw", None)
+    rows = collector._process_data_batch(
+        api_payload,
+        "AAPL",
+        "market.stg_raw",
+        None,
+        dt.datetime(2026, 1, 26, 10, 30, tzinfo=tz),
+    )
 
     # Then: Only one row should be processed
     assert len(rows) == 1
@@ -259,7 +307,13 @@ def test_process_data_batch_logs_schema_type_mismatch(monkeypatch, mock_error_lo
     monkeypatch.setattr(dbu, "check_table_exists", lambda *args, **kwargs: None)
 
     # When: Processing the data batch
-    rows = collector._process_data_batch(api_payload, "AAPL", "market.stg_raw", None)
+    rows = collector._process_data_batch(
+        api_payload,
+        "AAPL",
+        "market.stg_raw",
+        None,
+        dt.datetime(2026, 1, 26, 10, 30, tzinfo=tz),
+    )
 
     # Then: No rows should be processed
     assert len(rows) == 0
