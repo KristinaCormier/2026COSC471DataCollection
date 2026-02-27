@@ -29,16 +29,17 @@ def test_compute_window_aligns_to_5_minute_boundary_and_is_valid():
     # When: Computing the time window
     start, end = tu.compute_window(now, window_min=window_min)
 
-    # Then: Start should be at top of hour with zero seconds/microseconds
-    assert start.minute == 0 and start.second == 0 and start.microsecond == 0
-
     # Then: End should be aligned to 5-minute boundary
     assert end.second == 0 and end.microsecond == 0
     assert end.minute % 5 == 0
 
-    # Then: End should be after start and within window limit
+    # Then: Start should be exactly 5 minutes before end
+    assert (end - start) == dt.timedelta(minutes=5)
+    assert start.second == 0 and start.microsecond == 0
+    assert start.minute % 5 == 0
+
+    # Then: End should be after start
     assert end > start
-    assert (end - start) <= dt.timedelta(minutes=window_min)
 
 def test_parse_api_time_uses_market_tz():
     # Given: A timestamp string and a known timezone
@@ -52,7 +53,7 @@ def test_parse_api_time_uses_market_tz():
     assert parsed.tzinfo == tz
     assert parsed.hour == 10 and parsed.minute == 5
 
-def test_process_data_batch_includes_out_of_range_rows(monkeypatch):
+def test_process_data_batch_excludes_out_of_range_rows(monkeypatch):
     # Given: A time window and API data outside that window
     tz = ZoneInfo("America/New_York")
 
@@ -72,17 +73,19 @@ def test_process_data_batch_includes_out_of_range_rows(monkeypatch):
         "AAPL",
         "market.aapl",
         None,
+        start,
+        end,
         dt.datetime(2026, 1, 26, 10, 30, tzinfo=tz),
     )
 
-    # Then: Row should be processed despite being out of range
-    assert len(rows) == 1
-    assert rows[0][0] == "AAPL"
-    assert rows[0][1].minute == 55
+    # Then: Row should be excluded because it is out of range
+    assert len(rows) == 0
 
 def test_process_data_batch_allows_missing_close(monkeypatch, mock_error_log_dir):
     # Given: A valid window and API data with missing close
     tz = ZoneInfo("America/New_York")
+    start = dt.datetime(2026, 1, 26, 10, 0, tzinfo=tz)
+    end = dt.datetime(2026, 1, 26, 10, 30, tzinfo=tz)
 
     api_payload = [
         {"date": "2026-01-26 10:05:00", "open": 1, "high": 2, "low": 1, "close": None, "volume": 10},
@@ -97,6 +100,8 @@ def test_process_data_batch_allows_missing_close(monkeypatch, mock_error_log_dir
         "AAPL",
         "market.stg_raw",
         None,
+        start,
+        end,
         dt.datetime(2026, 1, 26, 10, 30, tzinfo=tz),
     )
 
@@ -105,9 +110,11 @@ def test_process_data_batch_allows_missing_close(monkeypatch, mock_error_log_dir
     assert rows[0][0] == "AAPL"
     assert rows[0][5] is None
 
-def test_process_data_batch_inserts_sorted_rows(monkeypatch):
+def test_process_data_batch_preserves_api_order(monkeypatch):
     # Given: A valid window and two out-of-order rows
     tz = ZoneInfo("America/New_York")
+    start = dt.datetime(2026, 1, 26, 10, 0, tzinfo=tz)
+    end = dt.datetime(2026, 1, 26, 10, 30, tzinfo=tz)
 
     api_payload = [
         {"date": "2026-01-26 10:25:00", "open": 1, "high": 2, "low": 1, "close": 1.7, "volume": 10},
@@ -123,19 +130,23 @@ def test_process_data_batch_inserts_sorted_rows(monkeypatch):
         "AAPL",
         "market.stg_raw",
         None,
+        start,
+        end,
         dt.datetime(2026, 1, 26, 10, 30, tzinfo=tz),
     )
 
-    # Then: Rows should be sorted ascending by timestamp
+    # Then: Rows should preserve API order
     assert len(rows) == 2
     assert rows[0][0] == "AAPL"
-    assert rows[0][1].minute == 5
+    assert rows[0][1].minute == 25
     assert rows[1][0] == "AAPL"
-    assert rows[1][1].minute == 25
+    assert rows[1][1].minute == 5
 
 def test_process_data_batch_infers_missing_date_field(monkeypatch, mock_error_log_dir):
     # Given: API data with missing date field
     tz = ZoneInfo("America/New_York")
+    start = dt.datetime(2026, 1, 26, 10, 0, tzinfo=tz)
+    end = dt.datetime(2026, 1, 26, 10, 30, tzinfo=tz)
 
     api_payload = [
         {"open": 1, "high": 2, "low": 1, "close": 1.5, "volume": 10},  # Missing 'date' field
@@ -150,6 +161,8 @@ def test_process_data_batch_infers_missing_date_field(monkeypatch, mock_error_lo
         "AAPL",
         "market.stg_raw",
         None,
+        start,
+        end,
         dt.datetime(2026, 1, 26, 10, 30, tzinfo=tz),
     )
 
@@ -169,6 +182,8 @@ def test_process_data_batch_infers_missing_date_field(monkeypatch, mock_error_lo
 def test_process_data_batch_handles_empty_api_response(monkeypatch):
     # Given: Empty API response
     tz = ZoneInfo("America/New_York")
+    start = dt.datetime(2026, 1, 26, 10, 0, tzinfo=tz)
+    end = dt.datetime(2026, 1, 26, 10, 30, tzinfo=tz)
 
     api_payload = []  # Empty response
 
@@ -181,6 +196,8 @@ def test_process_data_batch_handles_empty_api_response(monkeypatch):
         "AAPL",
         "market.stg_raw",
         None,
+        start,
+        end,
         dt.datetime(2026, 1, 26, 10, 30, tzinfo=tz),
     )
 
@@ -192,6 +209,8 @@ def test_process_data_batch_handles_empty_api_response(monkeypatch):
 def test_process_data_batch_inserts_rows_with_missing_fields(monkeypatch, mock_error_log_dir):
     # Given: Multiple rows with missing fields
     tz = ZoneInfo("America/New_York")
+    start = dt.datetime(2026, 1, 26, 10, 0, tzinfo=tz)
+    end = dt.datetime(2026, 1, 26, 10, 30, tzinfo=tz)
 
     api_payload = [
         {"date": "2026-01-26 09:55:00", "open": 1, "high": 2, "low": 1, "close": 1.5, "volume": 10},  # Out of range
@@ -208,6 +227,8 @@ def test_process_data_batch_inserts_rows_with_missing_fields(monkeypatch, mock_e
         "AAPL",
         "market.stg_raw",
         None,
+        start,
+        end,
         dt.datetime(2026, 1, 26, 10, 30, tzinfo=tz),
     )
 
@@ -224,6 +245,8 @@ def test_process_data_batch_inserts_rows_with_missing_fields(monkeypatch, mock_e
 def test_process_data_batch_rejects_invalid_and_logs_load_errors(monkeypatch, mock_error_log_dir):
     # Given: API data with invalid types, invalid timestamps, and duplicate timestamps
     tz = ZoneInfo("America/New_York")
+    start = dt.datetime(2026, 1, 26, 10, 0, tzinfo=tz)
+    end = dt.datetime(2026, 1, 26, 10, 30, tzinfo=tz)
 
     api_payload = [
         {"date": "2026-01-26 10:05:00", "open": 1.0, "high": 2.0, "low": 1.0, "close": 1.5, "volume": 10},
@@ -241,6 +264,8 @@ def test_process_data_batch_rejects_invalid_and_logs_load_errors(monkeypatch, mo
         "AAPL",
         "market.stg_raw",
         None,
+        start,
+        end,
         dt.datetime(2026, 1, 26, 10, 30, tzinfo=tz),
     )
 
@@ -261,6 +286,8 @@ def test_process_data_batch_rejects_invalid_and_logs_load_errors(monkeypatch, mo
 def test_process_data_batch_logs_duplicate_timestamps(monkeypatch, mock_error_log_dir):
     # Given: API data with duplicate timestamps
     tz = ZoneInfo("America/New_York")
+    start = dt.datetime(2026, 1, 26, 10, 0, tzinfo=tz)
+    end = dt.datetime(2026, 1, 26, 10, 30, tzinfo=tz)
 
     api_payload = [
         {"date": "2026-01-26 10:05:00", "open": 1.0, "high": 2.0, "low": 1.0, "close": 1.5, "volume": 10},
@@ -276,6 +303,8 @@ def test_process_data_batch_logs_duplicate_timestamps(monkeypatch, mock_error_lo
         "AAPL",
         "market.stg_raw",
         None,
+        start,
+        end,
         dt.datetime(2026, 1, 26, 10, 30, tzinfo=tz),
     )
 
@@ -296,6 +325,8 @@ def test_process_data_batch_logs_duplicate_timestamps(monkeypatch, mock_error_lo
 def test_process_data_batch_logs_schema_type_mismatch(monkeypatch, mock_error_log_dir):
     # Given: API data with schema/type mismatches
     tz = ZoneInfo("America/New_York")
+    start = dt.datetime(2026, 1, 26, 10, 0, tzinfo=tz)
+    end = dt.datetime(2026, 1, 26, 10, 30, tzinfo=tz)
 
     api_payload = [
         {"date": "2026-01-26 10:05:00", "open": "oops", "high": 2.0, "low": 1.0, "close": 1.5, "volume": 10},
@@ -312,6 +343,8 @@ def test_process_data_batch_logs_schema_type_mismatch(monkeypatch, mock_error_lo
         "AAPL",
         "market.stg_raw",
         None,
+        start,
+        end,
         dt.datetime(2026, 1, 26, 10, 30, tzinfo=tz),
     )
 

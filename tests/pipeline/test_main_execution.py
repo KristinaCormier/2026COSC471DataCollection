@@ -217,7 +217,8 @@ def test_main_computes_time_window(mock_env_complete, monkeypatch, capsys, mock_
     assert captured_window["start"] is not None
     assert captured_window["end"] is not None
     assert captured_window["start"] < captured_window["end"]
-    assert captured_window["start"].minute == 0  # Top of hour
+    assert (captured_window["end"] - captured_window["start"]) == dt.timedelta(minutes=5)
+    assert captured_window["start"].minute % 5 == 0
     assert captured_window["end"].minute % 5 == 0  # 5-minute aligned
 
 

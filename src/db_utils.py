@@ -1,6 +1,6 @@
 """
 Database utilities for stock data collection.
-Handles connection management, table validation, and name sanitization.
+Handles connection management, table validation, name sanitization, building SQL statements for data insertion and upsert operations.
 """
 
 from __future__ import annotations
@@ -77,3 +77,45 @@ def check_table_exists(conn, table_qualified: str):
                 f"Required table {table_qualified} does not exist. "
                 f"Create it first with the provided SQL."
             )
+
+def _build_upsert_statement(table: str) -> str:
+    """
+    Build the UPSERT SQL statement for stock data.
+    
+    Args:
+        table: raw staging area table name (e.g., 'market.stg_raw')
+    
+    Returns:
+        SQL string ready for executemany
+    """
+    return f"""
+        INSERT INTO {table} (symbol, ts, open, high, low, close, volume, asset_type, source, raw_payload)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (symbol, ts) DO UPDATE
+          SET symbol = EXCLUDED.symbol,            
+              open   = EXCLUDED.open,
+              high   = EXCLUDED.high,
+              low    = EXCLUDED.low,
+              close  = EXCLUDED.close,
+              volume = EXCLUDED.volume,
+              asset_type = EXCLUDED.asset_type,
+              source = EXCLUDED.source,
+              raw_payload = EXCLUDED.raw_payload
+    """
+
+def _build_insert_statement(table: str) -> str:
+    """
+    Build the INSERT statement for stock data.
+    
+    Args:
+        table: raw staging area table name (e.g., 'market.stg_raw')
+    
+    Returns:
+        SQL string ready for single-row inserts
+    """
+    return f"""
+        INSERT INTO {table} (symbol, ts, open, high, low, close, volume, asset_type, source, raw_payload)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (symbol, ts) DO NOTHING
+        RETURNING ts
+    """

@@ -68,22 +68,16 @@ def infer_timestamp(
 
 
 def compute_window(now_local: dt.datetime, window_min: int) -> tuple[dt.datetime, dt.datetime]:
-    """
-    Compute the time window for data collection.
-    
-    Returns (start, end) where:
-      - start is top of the hour
-      - end is aligned down to nearest 5-minute boundary
-      - end is capped by window_min
-      - end is always > start (at least 5 minutes)
-    """
-    start = current_hour(now_local)
-    end = now_local.replace(second=0, microsecond=0)
-    end = end - dt.timedelta(minutes=end.minute % 5)
-    end = min(end, start + dt.timedelta(minutes=window_min))
-    if end < start + dt.timedelta(minutes=5):
-        end = start + dt.timedelta(minutes=5)
-    return start, end
+        """
+        Compute the time window for data collection.
+
+        Returns (start, end) where:
+            - end is aligned down to nearest 5-minute boundary
+            - start is exactly 5 minutes before end
+        """
+        end = align_to_5_minute(now_local)
+        start = end - dt.timedelta(minutes=5)
+        return start, end
 
 
 def is_market_open(now_local: dt.datetime, open_time: dt.time, close_time: dt.time) -> bool:
