@@ -32,7 +32,7 @@ MARKET_TZ      = os.environ.get("MARKET_TZ", "America/New_York")
 WINDOW_MIN     = int(os.environ.get("WINDOW_MINUTES", "60")) # prevents grabbing large range of data 
 MARKET_OPEN    = os.environ.get("MARKET_OPEN", "04:00")
 MARKET_CLOSE   = os.environ.get("MARKET_CLOSE", "21:00")
-STG_TABLE_NAME     = "market.stg_raw"
+STG_TABLE_NAME     = "stg_raw.market_data"
 API_DELAY_SECONDS = float(os.environ.get("API_DELAY_SECONDS", "0.5"))
 
 # DB connection vars
