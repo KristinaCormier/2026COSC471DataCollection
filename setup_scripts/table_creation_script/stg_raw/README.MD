@@ -1,290 +1,181 @@
-# 📊 Market Data Staging Layer (PostgreSQL)
+📘 stg_raw Schema – Raw Market Data Staging Layer
+Overview
 
-## Overview
+The stg_raw schema serves as the initial landing zone for all incoming financial market data within the DRAC-based ELT pipeline.
 
-This project creates a **PostgreSQL staging layer** for market data ingestion and validation.
+This layer is designed to:
 
-It:
+Preserve source fidelity
 
-1. Creates a `stg_raw` schema  
-2. Dynamically creates **500+ ticker-specific tables**
-3. Logs ingestion errors
-4. Builds validated views from raw staging tables
+Allow duplicate records
 
-The architecture separates:
+Store unvalidated raw payloads
 
-- `raw_stg` → raw ingested data (source of truth)
-- `stg_raw` → structured staging + validation layer
+Capture ingestion errors separately
 
----
+Maintain full auditability and reproducibility
 
-# 🏗 Architecture
+It acts as the immutable foundation of the financial data pipeline before transformation into structured core and warehouse layers.
 
-```
-                +-------------------+
-                |   Data Sources    |
-                |  (API, CSV, FMP)  |
-                +---------+---------+
-                          |
-                          v
-                +-------------------+
-                |     raw_stg.*     |
-                |  500+ tables      |
-                +---------+---------+
-                          |
-                          v
-                +-------------------+
-                |  stg_raw.valid_*  |
-                |  Cleaned Views    |
-                +---------+---------+
-                          |
-                          v
-                Analytics / Mart Layer
-```
+🏗 Architecture Context
+Source APIs / CSV
+        ↓
+stg_raw (landing zone)
+        ↓
+core_dbms (validated & deduplicated)
+        ↓
+stg_transform (aggregation & feature prep)
+        ↓
+Data Warehouse (Star Schema)
+        ↓
+XGBoost Training
 
----
+The stg_raw schema intentionally performs no transformations or constraints beyond basic storage.
 
-# 📂 Schema Structure
+📊 Table: stg_raw.market_data
+Purpose
 
-## 1️⃣ `stg_raw` Schema
+Stores raw OHLCV financial market data exactly as received from external sources.
 
-Created with:
+This table:
 
-```sql
-CREATE SCHEMA IF NOT EXISTS stg_raw;
-```
+Allows duplicates
 
-Contains:
+Does not enforce NOT NULL constraints (except PK)
 
-- 500+ ticker tables
-- `ingest_errors`
-- validation views
+Preserves original source row via raw_payload
 
----
+Tracks ingestion metadata
 
-# 📈 Ticker Tables
+Structure
+Column	Type	Description
+ingest_id	BIGSERIAL (PK)	Unique ingestion record ID
+symbol	TEXT	Asset ticker symbol
+ts	TIMESTAMPTZ	Market timestamp (source-provided)
+open	NUMERIC(18,6)	Opening price
+high	NUMERIC(18,6)	High price
+low	NUMERIC(18,6)	Low price
+close	NUMERIC(18,6)	Closing price
+volume	NUMERIC(20,4)	Trade volume (allows decimals for some assets)
+asset_type	TEXT	stock, bond, commodity, index
+source	TEXT	Data origin (FMP_intraday, CSV, etc.)
+ingest_time	TIMESTAMPTZ	System ingestion timestamp
+raw_payload	JSONB	Exact source record
+Design Principles
+1️⃣ Immutable Raw Layer
 
-A table is created for each ticker symbol.
+No updates or deletes should occur in this table except for administrative cleanup.
 
-Example:
+2️⃣ Source Preservation
 
-```
-stg_raw.aapl
-stg_raw.msft
-stg_raw.tsla
-stg_raw.spy
-...
-```
+raw_payload ensures:
 
-### Table Structure
+Full reproducibility
 
-```sql
-stock_id     BIGSERIAL PRIMARY KEY
-date         TIMESTAMP
-open         NUMERIC(18,6)
-low          NUMERIC(18,6)
-high         NUMERIC(18,6)
-close        NUMERIC(18,6)
-volume       NUMERIC(20,4)
-asset_type   TEXT        -- stock, bond, commodity, index
-source       TEXT        -- FMP_intraday, FMP_hist, CSV, OtherAPI
-ingest_time  TIMESTAMPTZ DEFAULT now()
-raw_payload  JSONB       -- exact source row
-```
+Traceability of transformations
 
----
+Ability to reprocess data if logic changes
 
-# 🧾 Asset Coverage
+3️⃣ Duplicate Tolerance
 
-Includes:
+Duplicates are intentionally allowed at this stage. Deduplication occurs in downstream layers.
 
-- S&P 500 equities
-- ETFs
-- Bonds (`IRX`, `FVX`, `TNX`)
-- Indices (`DJI`, `IXIC`, `GSPC`)
-- Commodities (`GCF`, `CLF`)
+4️⃣ Minimal Constraints
 
-Total: **500+ instrument tables**
+Validation is deferred to the core_dbms layer.
 
----
+🚨 Table: stg_raw.ingest_errors
+Purpose
 
-# 🚨 Ingestion Error Logging
-
-Error table:
-
-```sql
-CREATE TABLE stg_raw.ingest_errors (
-    error_id     BIGSERIAL PRIMARY KEY,
-    ingest_id    BIGINT,
-    symbol       TEXT,
-    ts           TIMESTAMPTZ,
-    asset_type   TEXT,
-    source       TEXT,
-    error_type   TEXT,  -- parse_error, schema_mismatch, missing_field
-    error_detail TEXT,
-    raw_payload  JSONB,
-    log_time     TIMESTAMPTZ DEFAULT now()
-);
-```
-
-Used to capture:
-
-- Parse failures
-- Schema mismatches
-- Missing required fields
-- Invalid data formats
-
----
-
-# ✅ Data Validation Layer
-
-For every table in `raw_stg`, a validated view is created:
-
-Example:
-
-```
-stg_raw.valid_aapl
-stg_raw.valid_msft
-```
-
-Each view applies:
-
-```sql
-WHERE date IS NOT NULL
-  AND volume IS NOT NULL
-  AND volume >= 0
-```
+Captures ingestion failures without interrupting the primary pipeline.
 
 This ensures:
 
-- No missing timestamps
-- No null volume
-- No negative volume
+Fault tolerance
 
-These views are safe for analytics consumption.
+Error auditing
 
----
+Data quality monitoring
 
-# 🔁 Dynamic Table Creation
+Structure
+Column	        Type	        Description
+error_id	    BIGSERIAL (PK)	Unique error record ID
+ingest_id	    BIGINT	        Related market_data ingest ID (if applicable)
+symbol	        TEXT	        Asset symbol
+ts	            TIMESTAMPTZ	    Timestamp involved in error
+asset_type	    TEXT	        Asset classification
+source	        TEXT	        Data origin
+error_type	    TEXT	        parse_error, schema_mismatch, missing_field
+error_detail	TEXT	        Detailed error message
+raw_payload	    JSONB	        Original problematic record
+log_time	    TIMESTAMPTZ	    Error logging timestamp
 
-Tables are generated using a PL/pgSQL loop over a ticker array.
+Error Handling Strategy
 
-Benefits:
+Errors are logged instead of rejected outright to:
 
-- No manual table creation
-- Easy to add/remove symbols
-- Idempotent (`CREATE IF NOT EXISTS`)
+Prevent pipeline disruption
 
----
+Enable post-ingestion validation
 
-# ⚙ Execution Order
+Support observability and data quality metrics
 
-Run scripts in this order:
+🔍 Data Governance & Auditability
 
-1. Create `stg_raw` schema
-2. Execute ticker table creation block
-3. Create `ingest_errors` table
-4. Run validation view generation block
+This schema guarantees:
 
----
+Complete ingestion traceability
 
-# 📊 Design Notes
+Time-based audit of when data entered system
 
-## Why 1 Table per Ticker?
+Ability to reconstruct training datasets
 
-Pros:
-- Simple ingestion logic
-- Isolation between symbols
-- Easy per-symbol truncation/reload
+Compliance with reproducibility standards for ML research
 
-Cons:
-- Large number of tables
-- Harder cross-symbol queries
-- Not ideal for high-scale analytics
+📈 Performance Considerations
 
----
+Recommended indexing (if scaling):
 
-# 🚀 Recommended Future Improvements
+CREATE INDEX idx_stg_raw_symbol_ts
+ON stg_raw.market_data(symbol, ts);
 
-For better scalability:
+CREATE INDEX idx_stg_raw_ingest_time
+ON stg_raw.market_data(ingest_time);
 
-### Option A — Unified Table
-Use a single table:
+Partitioning by ts should be considered when volume exceeds ~50M rows.
 
-```sql
-stg_raw.market_data
-    symbol TEXT
-    date
-    open
-    ...
-```
+🧠 Role in Financial Time-Series Pipeline
 
-Partitioned by:
+The stg_raw layer is intentionally:
 
-- `symbol`
-- `date`
+Non-normalized
 
-### Option B — Declarative Partitioning
-Postgres native partitioning by:
+Non-validated
 
-```sql
-PARTITION BY LIST (symbol)
-```
+Non-deduplicated
 
-Benefits:
-- Cleaner architecture
-- Faster cross-symbol queries
-- Better indexing strategy
+It provides the foundation for:
 
----
+OHLCV validation
 
-# 🔐 Data Quality Strategy
+Deduplication logic
 
-Validation rules applied:
+5-minute to 15-minute aggregation
 
-- Non-null timestamp
-- Non-null volume
-- Non-negative volume
+Feature engineering
 
-Future enhancements could include:
+Star-schema warehouse loading
 
-- Duplicate detection
-- Price sanity checks
-- Gap detection
-- Outlier detection
-- Source reconciliation
+Distributed XGBoost training
 
----
+🔐 Operational Guidelines
 
-# 📌 PostgreSQL Requirements
+✔ Insert-only pattern
+✔ Never transform in-place
+✔ Always preserve raw_payload
+✔ Log ingestion anomalies
+✔ Downstream layers enforce quality rules
 
-Recommended:
+📌 Summary
 
-- PostgreSQL 13+
-- JSONB support
-- PL/pgSQL enabled (default)
-
----
-
-# 🏁 Summary
-
-This project builds a structured staging layer for:
-
-- Multi-asset ingestion
-- Data validation
-- Error tracking
-- Clean analytical handoff
-
-It is designed for:
-
-- Quant research
-- Trading systems
-- Market data warehousing
-- Financial analytics pipelines
-
----
-
-## Author
-
-Market Data Engineering Layer  
-PostgreSQL-Based Financial Staging Architecture
+The stg_raw schema functions as the immutable, auditable entry point for high-frequency financial market data within the scalable ELT pipeline. It prioritizes source fidelity, fault tolerance, and reproducibility before structured transformation and predictive modeling.

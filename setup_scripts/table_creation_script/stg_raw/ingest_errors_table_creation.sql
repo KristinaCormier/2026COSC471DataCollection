@@ -1,3 +1,6 @@
+CREATE SCHEMA IF NOT EXISTS stg_raw;
+
+
 CREATE TABLE IF NOT EXISTS stg_raw.ingest_errors (
     error_id     BIGSERIAL PRIMARY KEY,
     ingest_id    BIGINT,
