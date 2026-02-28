@@ -7,7 +7,8 @@ import datetime as dt
 import os
 import sys
 import pytest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
+from zoneinfo import ZoneInfo
 
 from src import intraday_data_collection as collector
 from src import db_utils as dbu
@@ -28,6 +29,26 @@ def mock_env_complete(monkeypatch):
     monkeypatch.setenv("PGDATABASE", "test_db")
     monkeypatch.setenv("PGUSER", "test_user")
     monkeypatch.setenv("PGPASSWORD", "test_pass")
+
+
+@pytest.fixture
+def mock_market_hours_time():
+    """Mock datetime.now() to return a time during market hours."""
+    # Use 10:00 AM EST on a trading day
+    market_time = dt.datetime(2026, 2, 2, 10, 0, 0, tzinfo=ZoneInfo("America/New_York"))
+    
+    def mock_now(tz=None):
+        if tz is not None:
+            return market_time.astimezone(tz)
+        return market_time
+    
+    # Use patch to replace datetime.datetime globally
+    with patch('datetime.datetime') as mock_dt:
+        # Configure the mock to return our market_time when now() is called
+        mock_dt.now = mock_now
+        # Also make the mock datetime itself callable and work like the real one
+        mock_dt.side_effect = lambda *args, **kw: dt.datetime(*args, **kw)
+        yield
 
 
 @pytest.fixture
@@ -55,7 +76,7 @@ def mock_successful_api(monkeypatch):
 #   ¬Q: main() exits with code 1 before data collection
 #   ∴ ¬P: Therefore, API_KEY was NOT set (validation working)
 @pytest.mark.pipeline
-def test_main_exits_when_api_key_missing(monkeypatch, capsys):
+def test_main_exits_when_api_key_missing(mock_market_hours_time, monkeypatch, capsys):
     # Given: Environment without API_KEY
     monkeypatch.setenv("FMP_API_KEY", "")
     monkeypatch.setenv("SYMBOLS", "AAPL")
@@ -78,7 +99,7 @@ def test_main_exits_when_api_key_missing(monkeypatch, capsys):
 #   ¬Q: main() exits with code 2 due to connection failure
 #   ∴ ¬P: Therefore, DB credentials were NOT valid (error handling working)
 @pytest.mark.pipeline
-def test_main_exits_when_db_connection_fails(mock_env_complete, monkeypatch, capsys, mock_error_log_dir):
+def test_main_exits_when_db_connection_fails(mock_market_hours_time, mock_env_complete, monkeypatch, capsys, mock_error_log_dir):
     # Given: Valid API key but failing DB connection
     def mock_db_connect_fail(host, port, dbname, user, password):
         raise Exception("Connection refused")
@@ -98,7 +119,7 @@ def test_main_exits_when_db_connection_fails(mock_env_complete, monkeypatch, cap
 
 # Test 3: main() processes symbols and returns successfully
 @pytest.mark.pipeline
-def test_main_successful_execution(mock_env_complete, mock_successful_api, monkeypatch, capsys, mock_error_log_dir):
+def test_main_successful_execution(mock_market_hours_time, mock_env_complete, mock_successful_api, monkeypatch, capsys, mock_error_log_dir):
     # Given: Complete valid environment and mocked successful responses
     mock_conn = FakeConnection()
     
@@ -124,7 +145,7 @@ def test_main_successful_execution(mock_env_complete, mock_successful_api, monke
 #   ¬Q: Error message appears for one symbol
 #   ∴ ¬P: Therefore, NOT all symbols processed successfully (error handling working)
 @pytest.mark.pipeline
-def test_main_continues_after_symbol_error(mock_env_complete, monkeypatch, capsys, mock_error_log_dir):
+def test_main_continues_after_symbol_error(mock_market_hours_time, mock_env_complete, monkeypatch, capsys, mock_error_log_dir):
     # Given: Environment with multiple symbols, one will fail
     mock_conn = FakeConnection()
     call_count = {"count": 0}
@@ -154,7 +175,7 @@ def test_main_continues_after_symbol_error(mock_env_complete, monkeypatch, capsy
 
 # Test 5: main() loads environment variables at runtime
 @pytest.mark.pipeline
-def test_main_loads_env_vars_at_runtime(monkeypatch, capsys, mock_error_log_dir):
+def test_main_loads_env_vars_at_runtime(mock_market_hours_time, monkeypatch, capsys, mock_error_log_dir):
     # Given: Environment variables set after import
     monkeypatch.setenv("FMP_API_KEY", "runtime_key")
     monkeypatch.setenv("SYMBOLS", "GOOGL")
@@ -194,7 +215,7 @@ def test_main_loads_env_vars_at_runtime(monkeypatch, capsys, mock_error_log_dir)
 
 # Test 6: main() computes correct time window
 @pytest.mark.pipeline
-def test_main_computes_time_window(mock_env_complete, monkeypatch, capsys, mock_error_log_dir):
+def test_main_computes_time_window(mock_market_hours_time, mock_env_complete, monkeypatch, capsys, mock_error_log_dir):
     # Given: Complete environment
     mock_conn = FakeConnection()
     captured_window = {"start": None, "end": None}
