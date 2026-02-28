@@ -43,6 +43,7 @@ def test_db_connect_with_invalid_credentials_fails(monkeypatch):
 
     # When/Then: Attempting to connect should raise an exception (¬Q observed, proving ¬P)
     with pytest.raises(Exception):
+
         conn = dbu.db_connect("invalid_host", 9999, "nonexistent_db", "invalid_user", "invalid_password")
         conn.close()
 
