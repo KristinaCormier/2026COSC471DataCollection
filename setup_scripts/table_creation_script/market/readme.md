@@ -1,5 +1,7 @@
-Market Database Setup Script
+Market Schema Setup Script
 Overview
+
+*Note this schema is obsolete and not being used in the pipeline but it continues to collect data for AAPL*
 
 #Table of Contents
 1. [setup_error_logs script](setup_error_logs.md)
