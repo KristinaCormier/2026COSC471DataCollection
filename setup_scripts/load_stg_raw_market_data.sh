@@ -1,10 +1,17 @@
-#!/bin/sh
+#!/bin/bash
+set -e
+
 # load_stg_raw_market_data.sh
 
-PGHOST="address"
-PGPORT="5432"
-PGDATABASE="db_name"
-PGUSER="db_user"
+ENV_FILE="../.env"
+if [ -f "$ENV_FILE" ]; then
+    set -a
+    . "$ENV_FILE"
+    set +a
+else
+    echo "Error: $ENV_FILE not found. Please create the .env file with the necessary variables."
+    exit 1
+fi
 
 CSV_PATH="/path/to/Your/File/29-stocks-5-min"   # adjust for *nix path
 

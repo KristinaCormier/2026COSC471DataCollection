@@ -139,7 +139,7 @@ SELECT
     close,
     volume::BIGINT,
     asset_type,
-    'https://drive.google.com/drive/u/1/folders/1UJeoonm37ZFeUrXp8pWGpMdIGXcD4jMa'
+    source
 FROM valid_rows
 ON CONFLICT (symbol, ts)
 DO UPDATE SET
