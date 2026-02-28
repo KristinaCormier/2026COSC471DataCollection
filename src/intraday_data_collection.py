@@ -1,13 +1,15 @@
-# On execution, this script should fetch stock data from the current time
-# to the bottom of the hour at 5 minute intervals in EST.
+# On execution, this script should fetch stock data for the most recent
+# completed 5 minute interval in EST.
 # It should insert this data into postgres for each symbol provided
-# This script is designed to be executed every hour throughout every extended market day using a job scheduler
+# This script is designed to be executed every 5 minutes throughout every extended market day using a job scheduler
 
 from __future__ import annotations
 
 import os
 import datetime as dt
 import sys
+import json
+import time
 import requests
 from dotenv import load_dotenv
 from zoneinfo import ZoneInfo
@@ -30,6 +32,8 @@ MARKET_TZ      = os.environ.get("MARKET_TZ", "America/New_York")
 WINDOW_MIN     = int(os.environ.get("WINDOW_MINUTES", "60")) # prevents grabbing large range of data 
 MARKET_OPEN    = os.environ.get("MARKET_OPEN", "04:00")
 MARKET_CLOSE   = os.environ.get("MARKET_CLOSE", "21:00")
+STG_TABLE_NAME     = "stg_raw.market_data"
+API_DELAY_SECONDS = float(os.environ.get("API_DELAY_SECONDS", "0.5"))
 
 # DB connection vars
 PGHOST = os.environ.get("PGHOST", "")
@@ -39,6 +43,8 @@ PGUSER = os.environ.get("PGUSER", "")
 PGPASSWORD = os.environ.get("PGPASSWORD", "")
 
 BASE_URL = "https://financialmodelingprep.com/api/v3/historical-chart/5min/{symbol}"
+
+ASSET_TYPE = "stock"
 
 DATA_FIELDS = ("date", "open", "high", "low", "close", "volume")
 REQUIRED_NUMERIC_FIELDS = ("open", "high", "low", "volume")
@@ -69,29 +75,6 @@ def _coerce_float(value) -> tuple[float | None, bool]:
         except ValueError:
             return None, False
     return None, False
-
-
-def _build_insert_statement(table: str) -> str:
-    """
-    Build the UPSERT SQL statement for stock data.
-    
-    Args:
-        table: Qualified table name (e.g., 'market.aapl')
-    
-    Returns:
-        SQL string ready for executemany
-    """
-    return f"""
-        INSERT INTO {table} (date, open, high, low, close, volume)
-        VALUES (%s, %s, %s, %s, %s, %s)
-        ON CONFLICT (date) DO UPDATE
-          SET open   = EXCLUDED.open,
-              high   = EXCLUDED.high,
-              low    = EXCLUDED.low,
-              close  = EXCLUDED.close,
-              volume = EXCLUDED.volume
-    """
-
 
 def _validate_and_parse_row(
     row: dict,
@@ -204,12 +187,32 @@ def _validate_and_parse_row(
 
     return ts_exch, parsed, hard_invalid_found
 
+def _construct_source_url(
+    symbol: str,
+    start: dt.datetime,
+    end: dt.datetime,
+    ) -> str:
+    """
+    Construct the API URL for a given symbol.
+    
+    Args:
+        symbol: Stock symbol
+    Returns:
+        Fully formatted API URL for the symbol
+    """
+    day_from = tu.ymd(min(start.date(), end.date()))
+    day_to = tu.ymd(max(start.date(), end.date()))
+    url = BASE_URL.format(symbol=symbol)
+    params = {"from": day_from, "to": day_to, "extended": "true"}
+    return f"{url}?{requests.compat.urlencode(params)}"
+
+
 
 def _fetch_api_data(
     symbol: str,
     start: dt.datetime,
-    end: dt.datetime,
-) -> list[dict]:
+    end: dt.datetime
+    ) -> list[dict]:
     """
     Fetch stock data from API.
     
@@ -267,6 +270,9 @@ def _process_data_batch(
     data: list[dict],
     symbol: str,
     table: str,
+    source_url: str,
+    start: dt.datetime,
+    end: dt.datetime,
     now_local: dt.datetime | None,
 ) -> list[tuple]:
     """
@@ -279,6 +285,8 @@ def _process_data_batch(
         data: Raw API data rows
         symbol: Stock symbol
         table: Target table name
+        start: Window start time
+        end: Window end time
         now_local: Current wall-clock time for timestamp inference
     
     Returns:
@@ -296,6 +304,10 @@ def _process_data_batch(
         if ts_exch is None:
             continue
 
+        last_ts = ts_exch
+        if ts_exch < start or ts_exch > end:
+            continue
+
         # Check for duplicate timestamp in batch
         if ts_exch in seen_ts:
             lu.log_db_error(
@@ -311,19 +323,21 @@ def _process_data_batch(
             continue
 
         seen_ts.add(ts_exch)
-        last_ts = ts_exch
         rows.append(
             (
+                symbol,
                 ts_exch,
                 parsed["open"],
                 parsed["high"],
                 parsed["low"],
                 parsed["close"],
                 parsed["volume"],
+                ASSET_TYPE,
+                source_url,
+                json.dumps(row),
             )
         )
 
-    rows.sort(key=lambda x: x[0])  # sort rows ascending by timestamp
     return rows
 
 
@@ -337,7 +351,7 @@ def _insert_batch(
     Insert validated rows into database.
     
     Single responsibility: database layer.
-    Handles table existence check and UPSERT operation.
+    Handles table existence check and INSERT operation.
     
     Args:
         conn: Database connection
@@ -346,22 +360,29 @@ def _insert_batch(
         symbol: Stock symbol (for error logging)
     
     Returns:
-        Number of rows inserted/upserted
+        Number of rows inserted
     """
     if not rows:
         return 0
 
     dbu.check_table_exists(conn, table)
 
-    insert_sql = _build_insert_statement(table)
+    insert_sql = dbu._build_insert_statement(table)
     try:
+        inserted = 0
+        stopped_on_conflict = False
         with conn.cursor() as cur:
-            cur.executemany(insert_sql, rows)
+            for row in rows:
+                cur.execute(insert_sql, row)
+                if cur.fetchone() is None:
+                    stopped_on_conflict = True
+                    break
+                inserted += 1
         conn.commit()
     except psycopg.Error as e:
         lu.log_db_error(
             symbol=symbol,
-            operation="UPSERT",
+            operation="INSERT",
             error_type=type(e).__name__,
             error_message=str(e),
             table_name=table,
@@ -370,14 +391,16 @@ def _insert_batch(
         )
         raise
 
-    print(f"inserted/upserted {len(rows)} rows into {table}")
-    return len(rows)
+    if stopped_on_conflict:
+        print(f"stopped on existing row for {symbol}")
+    print(f"inserted {inserted} rows into {table}")
+    return inserted
 
 
 
 
 def main():
-    global API_KEY, SYMBOLS, MARKET_TZ, WINDOW_MIN, MARKET_OPEN, MARKET_CLOSE, PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD, BASE_URL, TZ
+    global API_KEY, SYMBOLS, MARKET_TZ, WINDOW_MIN, MARKET_OPEN, MARKET_CLOSE, PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD, BASE_URL, TZ, API_DELAY_SECONDS
 
     # re-load env vars at runtime (not import time)
     API_KEY = os.environ.get("FMP_API_KEY", "")
@@ -388,6 +411,7 @@ def main():
     WINDOW_MIN = int(os.environ.get("WINDOW_MINUTES", "60"))
     MARKET_OPEN = os.environ.get("MARKET_OPEN", "04:00")
     MARKET_CLOSE = os.environ.get("MARKET_CLOSE", "21:00")
+    API_DELAY_SECONDS = float(os.environ.get("API_DELAY_SECONDS", "0.5"))
 
     PGHOST = os.environ.get("PGHOST", "")
     PGPORT = int(os.environ.get("PGPORT", "5432"))
@@ -463,19 +487,22 @@ def main():
             if data:
                 print("First:", data[0].get("date"), "Last:", data[-1].get("date"))
 
-            # Step 2: Get table name for symbol
-            table = dbu.safe_table_name_for_symbol(sym)
+            # Step 2: Construct source URL for the source field in the database and for logging purposes
+            source_url = _construct_source_url(sym, start, end)
 
             # Step 3: Process and validate batch
-            rows = _process_data_batch(data, sym, table, now_local)
+            rows = _process_data_batch(data, sym, STG_TABLE_NAME, source_url, start, end, now_local)
 
             if rows:
                 # Step 4: Insert into database
-                total += _insert_batch(conn, table, rows, sym)
+                total += _insert_batch(conn, STG_TABLE_NAME, rows, sym)
             else:
                 print("(no 5 minute bars in this window)")
         except Exception as e:
             print(f"[error] {sym}: {e}", file=sys.stderr)
+        finally:
+            if API_DELAY_SECONDS > 0:
+                time.sleep(API_DELAY_SECONDS)
 
     try:
         conn.close() # close db connection 

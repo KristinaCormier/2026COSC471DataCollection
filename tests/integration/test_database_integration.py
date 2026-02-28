@@ -129,24 +129,16 @@ def test_check_table_exists_passes_for_existing_table(test_db_config):
     except Exception as e:
         pytest.skip(f"Database not available: {e}")
     
-    # Try common test table names
-    test_tables = ["market.aapl", "market.msft", "market.googl"]
-    table_found = False
+    table_name = "market.stg_raw"
     
-    for table_name in test_tables:
-        try:
-            # When: Checking for existing table
-            dbu.check_table_exists(conn, table_name)
-            table_found = True
-            # Then: No exception should be raised
-            break
-        except RuntimeError:
-            continue
-    
-    conn.close()
-    
-    if not table_found:
-        pytest.skip("No test market tables found. Run table creation script first.")
+    try:
+        # When: Checking for existing table
+        dbu.check_table_exists(conn, table_name)
+        # Then: No exception should be raised
+    except RuntimeError:
+        pytest.skip(f"Table {table_name} not found. Run table creation script first.")
+    finally:
+        conn.close()
 
 
 # Test 5: current_hour() returns top of the hour
