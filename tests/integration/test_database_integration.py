@@ -130,7 +130,7 @@ def test_check_table_exists_passes_for_existing_table(test_db_config):
     except Exception as e:
         pytest.skip(f"Database not available: {e}")
     
-    table_name = "market.stg_raw"
+    table_name = "stg_raw.market_data"
     
     try:
         # When: Checking for existing table
