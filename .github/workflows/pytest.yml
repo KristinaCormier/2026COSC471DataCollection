@@ -29,7 +29,7 @@ jobs:
           --health-retries 5
     
     env:
-      # Required environment variables for auto_data_collection module imports
+      # Required environment variables for intraday_data_collection module imports
       PGPORT: 5432
       PGHOST: localhost
       PGDATABASE: test_db

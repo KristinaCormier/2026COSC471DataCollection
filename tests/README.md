@@ -35,7 +35,7 @@
 4. To generate both terminal and XML reports:
    - `pytest --cov=src --cov-report=term-missing --cov-report=xml`
 5. To test a specific module with coverage:
-   - `pytest tests/unit/test_auto_data_collection.py --cov=src.auto_data_collection --cov-report=term-missing`
+   - `pytest tests/unit/test_intraday_data_collection.py --cov=src.intraday_data_collection --cov-report=term-missing`
 
 ### Troubleshooting
 - If import-time errors occur for missing env vars (e.g., `PGPORT`), confirm `.env` is loaded.
