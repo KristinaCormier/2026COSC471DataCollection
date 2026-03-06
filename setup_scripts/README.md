@@ -87,7 +87,7 @@ Installs a cron job that runs `src/intraday_data_collection.py` on a scheduled i
 - Virtual environment must be installed at `$PROJECT_DIR/.venv`
 
 **What it does:**
-1. Creates a log directory (if missing). Default is `/usr/local/dc_error_logs` but can be changed in .env
+1. Creates a log directory (if missing). Default is `./logs` but can be changed in .env
 2. Sets ownership to the user running `sudo` (who launched the script)
 3. Sets permissions to `750` for owner/group read+execute, others none
 4. Creates wrapper script at `/usr/local/bin/run_stock_collector.sh`
@@ -111,7 +111,7 @@ Installs a cron job that runs `src/run_scheduled_operations.py` on a scheduled i
 - PostgreSQL pipeline_logs table must exist in `operation_logs` schema
 
 **What it does:**
-1. Creates a log directory (if missing). Default is `/usr/local/dc_error_logs` but can be changed in .env
+1. Creates a log directory (if missing). Default is `./logs` but can be changed in .env
 2. Sets ownership to the user running `sudo` (who launched the script)
 3. Sets permissions to `750` for owner/group read+execute, others none
 4. Creates wrapper script at `/usr/local/bin/run_scheduled_operations.sh`
@@ -127,7 +127,7 @@ sudo bash setup_scripts/setup_cronjob_scheduled_operations.sh
 
 ### Log Directory Ownership
 
-Both cron setup scripts provision `/usr/local/dc_error_logs` and assign it to the user who invoked `sudo`. This ensures:
+Both cron setup scripts provision `./logs` and assign it to the user who invoked `sudo`. This ensures:
 
 - **Single owner**: Log files are consistently owned by the sudo user, preventing permission issues
 - **Consistent validation**: Python startup code validates the directory exists and is writable before proceeding
@@ -135,7 +135,7 @@ Both cron setup scripts provision `/usr/local/dc_error_logs` and assign it to th
 
 To verify ownership after setup:
 ```bash
-ls -ld /usr/local/dc_error_logs
+ls -ld ./logs
 ```
 
 ## Running the Scripts
