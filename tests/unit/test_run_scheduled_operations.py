@@ -321,10 +321,16 @@ class TestMainOrchestration:
     @patch('run_scheduled_operations.db_connect')
     @patch('run_scheduled_operations.validate_environment')
     @patch('run_scheduled_operations.SQL_SCRIPTS_DIR')
-    def test_main_all_scripts_succeed(self, mock_sql_dir, mock_validate, mock_connect):
+    def test_main_all_scripts_succeed(self, mock_sql_dir, mock_validate, mock_connect, tmp_path, monkeypatch):
         """Given: 2 SQL scripts that both succeed
         When: main() is called
         Then: Returns 0 and executes all scripts"""
+        # Setup valid log directory
+        log_dir = tmp_path / "logs"
+        log_dir.mkdir()
+        monkeypatch.setattr('run_scheduled_operations.LOG_DIR', log_dir)
+        monkeypatch.setattr('run_scheduled_operations.logger', None)
+        
         mock_validate.return_value = True
         
         # Mock SQL scripts directory with two test files
@@ -357,10 +363,16 @@ class TestMainOrchestration:
     @patch('run_scheduled_operations.db_connect')
     @patch('run_scheduled_operations.validate_environment')
     @patch('run_scheduled_operations.SQL_SCRIPTS_DIR')
-    def test_main_one_script_fails_continues(self, mock_sql_dir, mock_validate, mock_connect):
+    def test_main_one_script_fails_continues(self, mock_sql_dir, mock_validate, mock_connect, tmp_path, monkeypatch):
         """Given: 2 SQL scripts where second fails
         When: main() is called
         Then: Returns 1 but still executes all scripts"""
+        # Setup valid log directory
+        log_dir = tmp_path / "logs"
+        log_dir.mkdir()
+        monkeypatch.setattr('run_scheduled_operations.LOG_DIR', log_dir)
+        monkeypatch.setattr('run_scheduled_operations.logger', None)
+        
         mock_validate.return_value = True
         
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -389,10 +401,16 @@ class TestMainOrchestration:
     @pytest.mark.unit
     @patch.dict('os.environ', {}, clear=True)
     @patch('run_scheduled_operations.validate_environment')
-    def test_main_env_validation_fails(self, mock_validate):
+    def test_main_env_validation_fails(self, mock_validate, tmp_path, monkeypatch):
         """Given: Environment validation fails
         When: main() is called
         Then: Returns 1 without attempting DB operations"""
+        # Setup valid log directory
+        log_dir = tmp_path / "logs"
+        log_dir.mkdir()
+        monkeypatch.setattr('run_scheduled_operations.LOG_DIR', log_dir)
+        monkeypatch.setattr('run_scheduled_operations.logger', None)
+        
         mock_validate.return_value = False
         
         result = main()
@@ -403,10 +421,16 @@ class TestMainOrchestration:
     @patch.dict('os.environ', {'PGDATABASE': 'testdb', 'PGUSER': 'testuser'})
     @patch('run_scheduled_operations.validate_environment')
     @patch('run_scheduled_operations.SQL_SCRIPTS_DIR')
-    def test_main_no_sql_files_found(self, mock_sql_dir, mock_validate):
+    def test_main_no_sql_files_found(self, mock_sql_dir, mock_validate, tmp_path, monkeypatch):
         """Given: SQL scripts directory exists but is empty
         When: main() is called
         Then: Returns 1 and logs warning"""
+        # Setup valid log directory
+        log_dir = tmp_path / "logs"
+        log_dir.mkdir()
+        monkeypatch.setattr('run_scheduled_operations.LOG_DIR', log_dir)
+        monkeypatch.setattr('run_scheduled_operations.logger', None)
+        
         mock_validate.return_value = True
         mock_sql_dir.exists.return_value = True
         mock_sql_dir.glob.return_value = []  # No scripts
@@ -419,10 +443,16 @@ class TestMainOrchestration:
     @patch.dict('os.environ', {'PGDATABASE': 'testdb', 'PGUSER': 'testuser'})
     @patch('run_scheduled_operations.validate_environment')
     @patch('run_scheduled_operations.SQL_SCRIPTS_DIR')
-    def test_main_sql_directory_missing(self, mock_sql_dir, mock_validate):
+    def test_main_sql_directory_missing(self, mock_sql_dir, mock_validate, tmp_path, monkeypatch):
         """Given: SQL scripts directory does not exist
         When: main() is called
         Then: Returns 1 and logs warning"""
+        # Setup valid log directory
+        log_dir = tmp_path / "logs"
+        log_dir.mkdir()
+        monkeypatch.setattr('run_scheduled_operations.LOG_DIR', log_dir)
+        monkeypatch.setattr('run_scheduled_operations.logger', None)
+        
         mock_validate.return_value = True
         mock_sql_dir.exists.return_value = False
         
@@ -435,11 +465,17 @@ class TestMainOrchestration:
     @patch('run_scheduled_operations.db_connect')
     @patch('run_scheduled_operations.validate_environment')
     @patch('run_scheduled_operations.SQL_SCRIPTS_DIR')
-    def test_main_database_connection_fails(self, mock_sql_dir, mock_validate, mock_connect):
+    def test_main_database_connection_fails(self, mock_sql_dir, mock_validate, mock_connect, tmp_path, monkeypatch):
         """Given: Database connection fails
         When: main() is called
         Then: Returns 1 and logs error"""
         import psycopg  # Import to access psycopg.Error
+        
+        # Setup valid log directory
+        log_dir = tmp_path / "logs"
+        log_dir.mkdir()
+        monkeypatch.setattr('run_scheduled_operations.LOG_DIR', log_dir)
+        monkeypatch.setattr('run_scheduled_operations.logger', None)
         
         mock_validate.return_value = True
         mock_connect.side_effect = psycopg.Error("Connection refused")
