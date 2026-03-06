@@ -5,6 +5,7 @@ Tests the three error logging functions: API errors, validation errors, and DB e
 
 import datetime as dt
 from zoneinfo import ZoneInfo
+import pytest
 
 from src import logging_utils as mod
 
@@ -163,16 +164,37 @@ def test_all_error_logs_use_iso_timestamps(mock_error_log_dir):
     assert parsed.tzinfo is not None
 
 
-def test_error_log_directory_created_automatically(mock_error_log_dir):
-    # Fixture already creates the directory, so just verify it exists and functions work
-    mod.log_api_error(
-        symbol="AAPL",
-        url="http://test.com",
-        error_type="Test",
-        error_message="test",
-        tz=TZ,
-    )
+def test_error_log_directory_validation_fails_if_missing(monkeypatch):
+    """Test that _validate_log_dir raises FileNotFoundError if directory missing."""
+    from pathlib import Path
+    from src import logging_utils
     
-    assert mock_error_log_dir.is_dir()
-    assert (mock_error_log_dir / "api_errors.csv").exists()
+    missing_dir = Path("/nonexistent/path/dc_error_logs")
+    
+    with pytest.raises(FileNotFoundError) as exc_info:
+        logging_utils._validate_log_dir(missing_dir)
+    
+    assert "does not exist" in str(exc_info.value)
+    assert str(missing_dir) in str(exc_info.value)
+
+
+def test_error_log_directory_validation_succeeds_if_exists_and_writable(mock_error_log_dir):
+    """Test that _validate_log_dir succeeds for writable directory."""
+    from src import logging_utils
+    
+    # Should not raise
+    logging_utils._validate_log_dir(mock_error_log_dir)
+
+
+def test_error_log_file_creation_requires_valid_directory(tmp_path):
+    """Test that _ensure_log_file validates parent directory before creating file."""
+    from pathlib import Path
+    from src import logging_utils
+    
+    missing_parent = tmp_path / "missing" / "dc_error_logs" / "api_errors.csv"
+    
+    with pytest.raises(FileNotFoundError) as exc_info:
+        logging_utils._ensure_log_file(missing_parent, ["timestamp", "symbol", "error"])
+    
+    assert "does not exist" in str(exc_info.value)
 

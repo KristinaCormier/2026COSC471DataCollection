@@ -622,5 +622,84 @@ class TestTransactionHandling:
         assert args[2] == 'success'  # status is 3rd positional argument
 
 
-if __name__ == "__main__":
-    pytest.main([__file__, "-v", "-m", "unit"])
+class TestLoggingStartup:
+    """Test logging startup configuration and validation."""
+    
+    @pytest.mark.unit
+    def test_configure_logging_fails_if_log_dir_missing(self, monkeypatch):
+        """Given: LOG_DIR points to missing directory
+        When: configure_logging() is called
+        Then: Raises FileNotFoundError with guidance"""
+        monkeypatch.setattr(
+            'run_scheduled_operations.LOG_DIR',
+            Path('/nonexistent/path/dc_error_logs')
+        )
+        
+        with pytest.raises(FileNotFoundError) as exc_info:
+            from run_scheduled_operations import configure_logging
+            configure_logging()
+        
+        assert "does not exist" in str(exc_info.value)
+        assert "setup_cronjob_scheduled_operations.sh" in str(exc_info.value)
+    
+    @pytest.mark.unit
+    def test_configure_logging_fails_if_log_dir_not_writable(self, tmp_path, monkeypatch):
+        """Given: LOG_DIR points to read-only directory
+        When: configure_logging() is called
+        Then: Raises PermissionError with guidance"""
+        read_only_dir = tmp_path / "readonly"
+        read_only_dir.mkdir()
+        read_only_dir.chmod(0o555)  # Read-only
+        
+        try:
+            monkeypatch.setattr(
+                'run_scheduled_operations.LOG_DIR',
+                read_only_dir
+            )
+            
+            with pytest.raises(PermissionError) as exc_info:
+                from run_scheduled_operations import configure_logging
+                configure_logging()
+            
+            assert "not writable" in str(exc_info.value)
+        finally:
+            read_only_dir.chmod(0o755)  # Restore for cleanup
+    
+    @pytest.mark.unit
+    def test_configure_logging_succeeds_with_valid_dir(self, tmp_path, monkeypatch):
+        """Given: LOG_DIR points to valid writable directory
+        When: configure_logging() is called
+        Then: Returns configured logger"""
+        valid_dir = tmp_path / "logs"
+        valid_dir.mkdir()
+        
+        monkeypatch.setattr(
+            'run_scheduled_operations.LOG_DIR',
+            valid_dir
+        )
+        
+        from run_scheduled_operations import configure_logging
+        logger = configure_logging()
+        
+        assert logger is not None
+        assert (valid_dir / 'scheduled_operations.log').exists()
+    
+    @pytest.mark.unit
+    @patch.dict('os.environ', {'PGDATABASE': 'testdb', 'PGUSER': 'testuser'})
+    def test_main_fails_at_startup_if_log_dir_missing(self, monkeypatch):
+        """Given: LOG_DIR does not exist when main() is called
+        When: main() is invoked
+        Then: Returns 1 and exits without DB operations"""
+        monkeypatch.setattr(
+            'run_scheduled_operations.LOG_DIR',
+            Path('/nonexistent/dc_error_logs')
+        )
+        monkeypatch.setattr('run_scheduled_operations.logger', None)
+        
+        from run_scheduled_operations import main
+        result = main()
+        
+        assert result == 1
+
+
+

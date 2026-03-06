@@ -9,20 +9,56 @@ import csv
 import datetime as dt
 import json
 from pathlib import Path
+from dotenv import load_dotenv
 
 
-ERROR_LOG_DIR = Path("/usr/local/dc_error_logs")
+load_dotenv()  # Load environment variables from .env file
+ERROR_LOG_DIR = Path(os.getenv("LOG_DIR", "./logs")) # Default to ./logs if not set
+
+
+def _validate_log_dir(log_dir: Path) -> None:
+    """
+    Validate that the log directory exists and is writable.
+    
+    Args:
+        log_dir: Path to the log directory
+        
+    Raises:
+        FileNotFoundError: If directory does not exist
+        PermissionError: If directory is not writable
+    """
+    if not log_dir.exists():
+        raise FileNotFoundError(
+            f"Log directory does not exist: {log_dir}\n"
+            f"Run the setup script: sudo bash setup_scripts/setup_cronjob_[daily_collector|scheduled_operations].sh"
+        )
+    if not log_dir.is_dir():
+        raise NotADirectoryError(f"Log path exists but is not a directory: {log_dir}")
+    
+    # Test writability by checking permissions
+    if not (log_dir.stat().st_mode & 0o200):
+        raise PermissionError(
+            f"Log directory is not writable: {log_dir}\n"
+            f"Ensure the directory is owned by the current user or has write permissions."
+        )
 
 
 def _ensure_log_file(log_path: Path, headers: list[str]) -> None:
     """
-    Ensure the log directory and file exist with proper headers.
+    Ensure the log file exists with proper headers.
+    Validates that the log directory exists and is writable.
     
     Args:
         log_path: Path to the log file
         headers: List of column headers
+        
+    Raises:
+        FileNotFoundError: If log directory does not exist
+        PermissionError: If log directory is not writable
     """
-    log_path.parent.mkdir(parents=True, exist_ok=True)
+    # Validate parent directory exists and is writable
+    _validate_log_dir(log_path.parent)
+    
     if not log_path.exists():
         with log_path.open("w", encoding="utf-8", newline="") as f:
             writer = csv.writer(f)

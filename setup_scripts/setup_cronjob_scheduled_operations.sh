@@ -27,8 +27,14 @@ else
 fi
 
 # Load deployment configuration with defaults
-RUN_AS_USER="${RUN_AS_USER:-cosc-admin}"
-CRON_TIME="${CRON_TIME_SCHEDULED_OPS:-0 * * * *}"  # Default: hourly (top of every hour)
+# Determine runtime user (must be invoked via sudo)
+if [[ -z "$SUDO_USER" ]]; then
+    echo "Error: This script must be run via sudo to determine the owning user"
+    exit 1
+fi
+RUN_AS_USER="$SUDO_USER"
+
+COLLECTION_SCHEDULE="${STG_TO_CORE_SCHEDULE:-0 2 * * *}"  # Default: daily at 2 AM
 
 USER_HOME="/home/$RUN_AS_USER"
 PYTHON="$PROJECT_DIR/.venv/bin/python"
@@ -39,7 +45,8 @@ CRON_FILE="/etc/cron.d/scheduled_operations"
 echo "Installing scheduled operations cron job"
 echo "User:        $RUN_AS_USER"
 echo "Project dir: $PROJECT_DIR"
-echo "Schedule:    $CRON_TIME"
+echo "Schedule:    $COLLECTION_SCHEDULE"
+echo "Log dir:     $LOG_DIR"
 
 # ------------------------------------------------------------
 # Basic prereq. checks
@@ -93,6 +100,15 @@ fi
 rm -f "$TEMP_CHECK"
 
 # ------------------------------------------------------------
+# Provision log directory with ownership
+# ------------------------------------------------------------
+echo "Provisioning log directory: $LOG_DIR"
+sudo mkdir -p "$LOG_DIR"
+sudo chown -R "$RUN_AS_USER:$RUN_AS_USER" "$LOG_DIR"
+sudo chmod 750 "$LOG_DIR"
+echo "Log directory provisioned and owned by $RUN_AS_USER"
+
+# ------------------------------------------------------------
 # Create wrapper script
 # ------------------------------------------------------------
 sudo tee "$WRAPPER" > /dev/null <<'EOF'
@@ -132,7 +148,7 @@ PGUSER=$PGUSER
 PGPASSWORD=$PGPASSWORD
 
 # Run scheduled operations
-$CRON_TIME $RUN_AS_USER $WRAPPER
+$COLLECTION_SCHEDULE $RUN_AS_USER $WRAPPER
 EOF
 
 sudo chmod 644 "$CRON_FILE"
@@ -140,8 +156,9 @@ sudo chmod 644 "$CRON_FILE"
 echo "Cron job installed successfully"
 echo "Cron file:  $CRON_FILE"
 echo "Cron will run this script:    $WRAPPER"
+echo "Log directory:                $LOG_DIR (owned by $RUN_AS_USER)"
 echo ""
 echo "Next step:"
 echo "1. Verify .env has correct database credentials (PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD)"
 echo "2. Test manually: python3 $SCRIPT"
-echo "3. Check logs: tail -f /usr/local/dc_error_logs/scheduled_operations.log"
+echo "3. Check logs: tail -f $LOG_DIR/scheduled_operations.log"
