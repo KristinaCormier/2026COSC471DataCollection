@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS stg_raw.market_data (
     source        TEXT,       -- FMP_intraday, FMP_hist, CSV, OtherAPI
     ingest_time   TIMESTAMPTZ DEFAULT now(),
     raw_payload   JSONB              -- exact source row
+    CONSTRAINT unique_symbol_ts_source UNIQUE (symbol, ts)
 );
 
 
