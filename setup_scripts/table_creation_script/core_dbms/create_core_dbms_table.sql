@@ -12,5 +12,5 @@ CREATE TABLE IF NOT EXISTS core_dbms.market_data_5m (
     asset_type     TEXT NOT NULL,
     source         TEXT,
     created_at     TIMESTAMPTZ DEFAULT now(),
-    UNIQUE (symbol, ts)
+    CONSTRAINT unique_symbol_ts UNIQUE (symbol, ts)
 );
