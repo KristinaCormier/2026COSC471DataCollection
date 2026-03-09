@@ -11,6 +11,7 @@ import sys
 import json
 import time
 import requests
+from pathlib import Path
 from dotenv import load_dotenv
 from zoneinfo import ZoneInfo
 
@@ -401,6 +402,26 @@ def _insert_batch(
 
 def main():
     global API_KEY, SYMBOLS, MARKET_TZ, WINDOW_MIN, MARKET_OPEN, MARKET_CLOSE, PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD, BASE_URL, TZ, API_DELAY_SECONDS
+
+    # Validate log directory exists and is writable before proceeding
+    log_dir = Path(lu.ERROR_LOG_DIR)
+    if not log_dir.exists():
+        print(
+            f"ERROR: Log directory does not exist: {log_dir}\n"
+            f"Run the setup script: sudo bash setup_scripts/setup_cronjob_daily_collector.sh",
+            file=sys.stderr
+        )
+        sys.exit(1)
+    if not log_dir.is_dir():
+        print(f"ERROR: Log path exists but is not a directory: {log_dir}", file=sys.stderr)
+        sys.exit(1)
+    if not (log_dir.stat().st_mode & 0o200):
+        print(
+            f"ERROR: Log directory is not writable: {log_dir}\n"
+            f"Check ownership: ls -ld {log_dir}",
+            file=sys.stderr
+        )
+        sys.exit(1)
 
     # re-load env vars at runtime (not import time)
     API_KEY = os.environ.get("FMP_API_KEY", "")

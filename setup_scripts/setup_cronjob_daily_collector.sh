@@ -27,12 +27,18 @@ else
 fi
 
 # Installs a daily cron.d job for stock data collection
-# Runs as configured system user
+# Runs as the user who invoked sudo (to own log directory)
 # Similar pattern to postgres backup setup
 
+# Determine runtime user (must be invoked via sudo)
+if [[ -z "$SUDO_USER" ]]; then
+    echo "Error: This script must be run via sudo to determine the owning user"
+    exit 1
+fi
+RUN_AS_USER="$SUDO_USER"
+
 # Load deployment configuration with defaults
-RUN_AS_USER="${RUN_AS_USER:-cosc-admin}"
-CRON_TIME="${CRON_TIME:-0 * * * *}"
+COLLECTION_SCHEDULE="${COLLECTION_SCHEDULE:-0 * * * *}"
 
 USER_HOME="/home/$RUN_AS_USER"
 PYTHON="$PROJECT_DIR/.venv/bin/python"
@@ -43,7 +49,8 @@ CRON_FILE="/etc/cron.d/stock_collector_daily"
 echo "Installing stock collector cron job"
 echo "User:        $RUN_AS_USER"
 echo "Project dir: $PROJECT_DIR"
-echo "Schedule:    $CRON_TIME"
+echo "Schedule:    $COLLECTION_SCHEDULE"
+echo "Log dir:     $LOG_DIR"
 
 # ------------------------------------------------------------
 # Basic prereq. checks
@@ -65,6 +72,15 @@ else
 fi
 
 # ------------------------------------------------------------
+# Provision log directory with ownership
+# ------------------------------------------------------------
+echo "Provisioning log directory: $LOG_DIR"
+sudo mkdir -p "$LOG_DIR"
+sudo chown -R "$RUN_AS_USER:$RUN_AS_USER" "$LOG_DIR"
+sudo chmod 750 "$LOG_DIR"
+echo "Log directory provisioned and owned by $RUN_AS_USER"
+
+# ------------------------------------------------------------
 # Create wrapper script
 # ------------------------------------------------------------
 sudo tee "$WRAPPER" > /dev/null <<EOF
@@ -84,7 +100,7 @@ sudo tee "$CRON_FILE" > /dev/null <<EOF
 SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-$CRON_TIME $RUN_AS_USER $WRAPPER
+$COLLECTION_SCHEDULE $RUN_AS_USER $WRAPPER
 EOF
 
 sudo chmod 644 "$CRON_FILE"

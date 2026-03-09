@@ -76,7 +76,7 @@ def mock_successful_api(monkeypatch):
 #   ¬Q: main() exits with code 1 before data collection
 #   ∴ ¬P: Therefore, API_KEY was NOT set (validation working)
 @pytest.mark.pipeline
-def test_main_exits_when_api_key_missing(mock_market_hours_time, monkeypatch, capsys):
+def test_main_exits_when_api_key_missing(mock_market_hours_time, monkeypatch, capsys, mock_error_log_dir):
     # Given: Environment without API_KEY
     monkeypatch.setenv("FMP_API_KEY", "")
     monkeypatch.setenv("SYMBOLS", "AAPL")

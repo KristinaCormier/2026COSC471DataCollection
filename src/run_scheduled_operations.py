@@ -16,28 +16,58 @@ import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
+from dotenv import load_dotenv
 
 import psycopg
 
 # Setup logging to both file and stderr
-# Try to create log directory, but fail gracefully if not possible (e.g., during tests)
-LOG_DIR = Path(os.getenv("LOG_DIR", "/usr/local/dc_error_logs"))
-try:
-    LOG_DIR.mkdir(parents=True, exist_ok=True)
-except (PermissionError, OSError):
-    # If we can't create the directory (e.g., in tests), use temp directory
-    LOG_DIR = Path(os.getenv("LOG_DIR", "/tmp/dc_error_logs"))
-    LOG_DIR.mkdir(parents=True, exist_ok=True)
+# Log directory must be pre-provisioned by setup script
+load_dotenv()  # Load environment variables from .env file
+LOG_DIR = Path(os.getenv("LOG_DIR", "./logs")) # Default to ./logs if not set
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler(LOG_DIR / 'scheduled_operations.log'),
-        logging.StreamHandler(sys.stderr)
-    ]
-)
-logger = logging.getLogger(__name__)
+
+# Logging configuration is deferred to main() to allow for startup validation
+logger = None
+
+
+def configure_logging() -> logging.Logger:
+    """
+    Configure logging after validating that the log directory exists and is writable.
+    Must be called from main() before any logging operations.
+    
+    Returns:
+        Configured logger instance
+        
+    Raises:
+        FileNotFoundError: If LOG_DIR does not exist
+        PermissionError: If LOG_DIR is not writable
+    """
+    # Validate log directory exists and is writable
+    if not LOG_DIR.exists():
+        raise FileNotFoundError(
+            f"Log directory does not exist: {LOG_DIR}\n"
+            f"Run the setup script: sudo bash setup_scripts/setup_cronjob_scheduled_operations.sh"
+        )
+    if not LOG_DIR.is_dir():
+        raise NotADirectoryError(f"Log path exists but is not a directory: {LOG_DIR}")
+    
+    # Test write permissions
+    if not (LOG_DIR.stat().st_mode & 0o200):
+        raise PermissionError(
+            f"Log directory is not writable: {LOG_DIR}\n"
+            f"Check ownership: ls -ld {LOG_DIR}"
+        )
+    
+    # Configure logging now that directory is validated
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.FileHandler(LOG_DIR / 'scheduled_operations.log'),
+            logging.StreamHandler(sys.stderr)
+        ]
+    )
+    return logging.getLogger(__name__)
 
 # Database configuration from environment
 PGHOST = os.getenv("PGHOST", "localhost")
@@ -56,10 +86,12 @@ def validate_environment() -> bool:
     pguser = os.getenv("PGUSER")
     
     if not pgdatabase:
-        logger.error("PGDATABASE environment variable is not set")
+        if logger:
+            logger.error("PGDATABASE environment variable is not set")
         return False
     if not pguser:
-        logger.error("PGUSER environment variable is not set")
+        if logger:
+            logger.error("PGUSER environment variable is not set")
         return False
     return True
 
@@ -118,7 +150,8 @@ def log_execution(
             ))
         conn.commit()
     except Exception as e:
-        logger.error(f"Failed to log execution for {script_name}: {e}")
+        if logger:
+            logger.error(f"Failed to log execution for {script_name}: {e}")
 
 
 def execute_sql_script(
@@ -130,7 +163,8 @@ def execute_sql_script(
     start_time = datetime.now(timezone.utc)
     
     try:
-        logger.info(f"Executing {script_name}...")
+        if logger:
+            logger.info(f"Executing {script_name}...")
         sql_content = read_sql_file(script_path)
         
         with conn.cursor() as cur:
@@ -139,7 +173,8 @@ def execute_sql_script(
         conn.commit()
         
         duration = (datetime.now(timezone.utc) - start_time).total_seconds()
-        logger.info(f"{script_name} completed successfully ({duration:.2f}s)")
+        if logger:
+            logger.info(f"{script_name} completed successfully ({duration:.2f}s)")
         
         # Log success to pipeline_logs
         log_execution(conn, script_name, 'success', duration)
@@ -151,8 +186,9 @@ def execute_sql_script(
         error_msg = str(e)
         duration = (datetime.now(timezone.utc) - start_time).total_seconds()
         
-        logger.error(f"{script_name} failed: {error_msg}")
-        logger.error(f"   Duration: {duration:.2f}s")
+        if logger:
+            logger.error(f"{script_name} failed: {error_msg}")
+            logger.error(f"   Duration: {duration:.2f}s")
         
         # Log failure to pipeline_logs
         log_execution(conn, script_name, 'failure', duration, error_msg)
@@ -162,6 +198,15 @@ def execute_sql_script(
 
 def main() -> int:
     """Execute all scheduled SQL operations in alphabetical order."""
+    global logger
+    
+    # Configure logging at startup - must be done before any logger calls
+    try:
+        logger = configure_logging()
+    except (FileNotFoundError, PermissionError, NotADirectoryError) as e:
+        print(f"ERROR: Failed to configure logging: {e}", file=sys.stderr)
+        return 1
+    
     logger.info("=" * 70)
     logger.info(f"Starting scheduled operations run at {datetime.now(timezone.utc).isoformat()}")
     logger.info("=" * 70)

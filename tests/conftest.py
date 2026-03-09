@@ -199,11 +199,18 @@ def mock_execute_values(monkeypatch):
 
 @pytest.fixture(scope="function")
 def mock_error_log_dir(tmp_path, monkeypatch):
-    """Mock ERROR_LOG_DIR to use temp directory instead of /usr/local/dc_error_logs."""
+    """Mock ERROR_LOG_DIR to use temp directory instead of /usr/local/dc_error_logs.
+    
+    Creates the directory and ensures it's writable, matching the behavior expected
+    after setup script provisioning.
+    """
     from src import logging_utils
     from src import intraday_data_collection
     
     error_log_dir = tmp_path / "dc_error_logs"
+    # Create the directory since code now expects setup scripts to provision it
+    error_log_dir.mkdir(parents=True, exist_ok=True)
+    
     # Patch the module directly
     monkeypatch.setattr(logging_utils, "ERROR_LOG_DIR", error_log_dir)
     # Also patch the reference in intraday_data_collection.lu
