@@ -125,28 +125,19 @@ def log_execution(
         with conn.cursor() as cur:
             cur.execute("""
                 INSERT INTO operation_logs.pipeline_logs (
-                    pipeline_step,
-                    start_time,
-                    end_time,
+                    pipeline_stage,
                     status,
-                    error_message,
-                    record_count
+                    created_at,
+                    message
                 )
                 VALUES (
-                    %s,
-                    %s,
-                    %s,
-                    %s,
-                    %s,
-                    %s
+                    %s, %s, %s, %s
                 )
             """, (
                 script_name,
-                datetime.now(timezone.utc),
-                datetime.now(timezone.utc),
                 status,
-                error_message,
-                record_count
+                datetime.now(timezone.utc),
+                error_message
             ))
         conn.commit()
     except Exception as e:

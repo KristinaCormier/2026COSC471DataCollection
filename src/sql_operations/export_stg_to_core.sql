@@ -77,7 +77,7 @@ log_quality_errors AS (
         symbol,
         ts,
         error_type,
-        error_details,
+        error_detail,
         severity
     )
     SELECT
@@ -140,7 +140,7 @@ core_insert AS (
 
 watermark_update AS (
     INSERT INTO operation_logs.pipeline_watermarks (
-        pipeline_step,
+        pipeline_name,
         last_processed_ts,
         record_count
     )
@@ -149,7 +149,7 @@ watermark_update AS (
         MAX(ts),
         COUNT(*)
     FROM valid
-    ON CONFLICT (pipeline_step) DO UPDATE SET
+    ON CONFLICT (pipeline_name) DO UPDATE SET
         last_processed_ts = EXCLUDED.last_processed_ts,
         record_count = EXCLUDED.record_count
 )
