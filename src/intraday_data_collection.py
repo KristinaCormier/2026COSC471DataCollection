@@ -8,37 +8,41 @@ from __future__ import annotations
 import os
 import datetime as dt
 import sys
-import json
-import time
 import requests
-from pathlib import Path
 from dotenv import load_dotenv
 from zoneinfo import ZoneInfo
 
-# DB client
-import psycopg
+from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.orm import Session
+
+from models import MarketData
+
+from orm_db import get_engine, get_session_factory, init_db
 
 # Internal utilities
 import data_validation as dv
 import time_utils as tu
-import db_utils as dbu
 import logging_utils as lu
 
-
-# load in environment vars 
+print("Loaded models from:", MarketData.__module__)
+print("Table columns:", list(MarketData.__table__.columns.keys()))
+# load in environment vars
 load_dotenv()
-API_KEY        = os.environ.get("FMP_API_KEY", "")
-SYMBOLS        = os.environ.get("SYMBOLS", "AAPL,AMD,AMZN,BA,BABA,BAC,C,CSCO,CVX,DIS,F,GE,GOOGL,IBM,INTC,JNJ,JPM,KO,MCD,META,MSFT,NFLX,NVDA,PFE,T,TSLA,VZ,WMT,XOM").split(",")
-MARKET_TZ      = os.environ.get("MARKET_TZ", "America/New_York")
-WINDOW_MIN     = int(os.environ.get("WINDOW_MINUTES", "60")) # prevents grabbing large range of data 
-MARKET_OPEN    = os.environ.get("MARKET_OPEN", "04:00")
-MARKET_CLOSE   = os.environ.get("MARKET_CLOSE", "21:00")
-STG_TABLE_NAME     = "stg_raw.market_data"
-API_DELAY_SECONDS = float(os.environ.get("API_DELAY_SECONDS", "0.5"))
+
+API_KEY = os.environ.get("FMP_API_KEY", "")
+SYMBOLS = os.environ.get(
+    "SYMBOLS",
+    "AAPL,AMD,AMZN,BA,BABA,BAC,C,CSCO,CVX,DIS,F,GE,GOOGL,IBM,INTC,JNJ,JPM,KO,MCD,META,MSFT,NFLX,NVDA,PFE,T,TSLA,VZ,WMT,XOM",
+).split(",")
+
+MARKET_TZ = os.environ.get("MARKET_TZ", "America/New_York")
+WINDOW_MIN = int(os.environ.get("WINDOW_MINUTES", "5"))
+MARKET_OPEN = os.environ.get("MARKET_OPEN", "04:00")
+MARKET_CLOSE = os.environ.get("MARKET_CLOSE", "21:00")
 
 # DB connection vars
 PGHOST = os.environ.get("PGHOST", "")
-PGPORT = int(os.environ.get("PGPORT", ""))
+PGPORT = int(os.environ.get("PGPORT", "5432"))
 PGDATABASE = os.environ.get("PGDATABASE", "")
 PGUSER = os.environ.get("PGUSER", "")
 PGPASSWORD = os.environ.get("PGPASSWORD", "")
@@ -56,11 +60,14 @@ SYMBOLS = [s.strip() for s in SYMBOLS if s.strip()]
 # timezone handling
 TZ = ZoneInfo(MARKET_TZ)
 
+# ORM table name used in logs
+STAGING_TABLE_NAME = "stg_raw.market_data"
+
 
 def _coerce_float(value) -> tuple[float | None, bool]:
     """
     Attempt to coerce a value to float.
-    
+
     Returns:
         Tuple of (coerced_value, success)
     """
@@ -77,10 +84,10 @@ def _coerce_float(value) -> tuple[float | None, bool]:
             return None, False
     return None, False
 
+
 def _validate_and_parse_row(
     row: dict,
     symbol: str,
-    table: str,
     hard_invalid_found: bool,
     last_ts: dt.datetime | None,
     now_local: dt.datetime | None,
@@ -88,31 +95,31 @@ def _validate_and_parse_row(
 ) -> tuple[dt.datetime | None, dict | None, bool]:
     """
     Validate and parse a single row from API data.
-    
+
     Checks for all-empty fields, timestamp validity, and schema/type compliance.
     Logs errors to db_insert_errors for invalid rows.
-    
+
     Args:
         row: Raw API row dictionary
         symbol: Stock symbol being processed
-        table: Target table name
         hard_invalid_found: Whether any hard invalids found so far in batch
         last_ts: Previous row's timestamp (for inference)
         now_local: Current wall-clock time (for inference)
         tz: Timezone for timestamps
-    
+
     Returns:
         Tuple of (timestamp, parsed_values_dict, updated_hard_invalid_found)
         or (None, None, hard_invalid_found) if row rejected
     """
     missing_fields, all_empty = dv.analyze_row(row, DATA_FIELDS)
+
     if all_empty:
         lu.log_db_error(
             symbol=symbol,
             operation="LOAD",
             error_type="AllFieldsEmpty",
             error_message="all fields empty",
-            table_name=table,
+            table_name=STAGING_TABLE_NAME,
             row_count=1,
             tz=tz,
         )
@@ -129,11 +136,12 @@ def _validate_and_parse_row(
                 operation="LOAD",
                 error_type="MissingDate",
                 error_message="date field missing",
-                table_name=table,
+                table_name=STAGING_TABLE_NAME,
                 row_count=1,
                 tz=tz,
             )
             return None, None, hard_invalid_found
+
         ts_exch, _ = tu.infer_timestamp(last_ts, now_local, "date_missing", tz)
     else:
         try:
@@ -144,7 +152,7 @@ def _validate_and_parse_row(
                 operation="LOAD",
                 error_type="InvalidTimestamp",
                 error_message="invalid timestamp format",
-                table_name=table,
+                table_name=STAGING_TABLE_NAME,
                 row_count=1,
                 tz=tz,
             )
@@ -152,16 +160,19 @@ def _validate_and_parse_row(
 
     # enforce schema/types before insertion
     invalid_fields = []
-    parsed = {}
+    parsed: dict[str, float | None] = {}
+
     for field in REQUIRED_NUMERIC_FIELDS:
         val = row.get(field)
         if dv.is_empty(val):
             invalid_fields.append(field)
             continue
+
         num, ok = _coerce_float(val)
         if not ok:
             invalid_fields.append(field)
             continue
+
         parsed[field] = num
 
     close_val = row.get("close")
@@ -180,7 +191,7 @@ def _validate_and_parse_row(
             operation="LOAD",
             error_type="SchemaTypeMismatch",
             error_message=f"invalid fields: {','.join(sorted(set(invalid_fields)))}",
-            table_name=table,
+            table_name=STAGING_TABLE_NAME,
             row_count=1,
             tz=tz,
         )
@@ -208,7 +219,6 @@ def _construct_source_url(
     return f"{url}?{requests.compat.urlencode(params)}"
 
 
-
 def _fetch_api_data(
     symbol: str,
     start: dt.datetime,
@@ -216,22 +226,27 @@ def _fetch_api_data(
     ) -> list[dict]:
     """
     Fetch stock data from API.
-    
+
     Single responsibility: API communication layer.
     Raises on network or API errors.
-    
+
     Args:
         symbol: Stock symbol
         start: Start time for data window
         end: End time for data window
-    
+
     Returns:
         List of raw API data rows
     """
     day_from = tu.ymd(min(start.date(), end.date()))
     day_to = tu.ymd(max(start.date(), end.date()))
     url = BASE_URL.format(symbol=symbol)
-    params = {"from": day_from, "to": day_to, "extended": "true", "apikey": API_KEY}
+    params = {
+        "from": day_from,
+        "to": day_to,
+        "extended": "true",
+        "apikey": API_KEY,
+    }
 
     try:
         r = requests.get(url, params=params, timeout=25)
@@ -270,53 +285,39 @@ def _fetch_api_data(
 def _process_data_batch(
     data: list[dict],
     symbol: str,
-    table: str,
-    source_url: str,
     start: dt.datetime,
     end: dt.datetime,
     now_local: dt.datetime | None,
-) -> list[tuple]:
-    """
-    Process, validate, and deduplicate raw API data.
-    
-    Single responsibility: data processing and filtering layer.
-    Returns validated, de-duplicated data ready for insertion.
-    
-    Args:
-        data: Raw API data rows
-        symbol: Stock symbol
-        table: Target table name
-        start: Window start time
-        end: Window end time
-        now_local: Current wall-clock time for timestamp inference
-    
-    Returns:
-        List of validated tuples ready for database insertion
-    """
+) -> list[MarketData]:
     hard_invalid_found = False
-    rows = []
+    rows: list[MarketData] = []
     last_ts = None
     seen_ts: set[dt.datetime] = set()
 
     for row in data:
         ts_exch, parsed, hard_invalid_found = _validate_and_parse_row(
-            row, symbol, table, hard_invalid_found, last_ts, now_local, TZ
+            row=row,
+            symbol=symbol,
+            hard_invalid_found=hard_invalid_found,
+            last_ts=last_ts,
+            now_local=now_local,
+            tz=TZ,
         )
-        if ts_exch is None:
+
+        if ts_exch is None or parsed is None:
             continue
 
-        last_ts = ts_exch
-        if ts_exch < start or ts_exch > end:
+        # keep only rows in the requested collection window
+        if ts_exch < start or ts_exch >= end:
             continue
 
-        # Check for duplicate timestamp in batch
         if ts_exch in seen_ts:
             lu.log_db_error(
                 symbol=symbol,
                 operation="LOAD",
                 error_type="DuplicateTimestamp",
                 error_message="duplicate timestamp in batch",
-                table_name=table,
+                table_name=STAGING_TABLE_NAME,
                 row_count=1,
                 tz=TZ,
             )
@@ -324,115 +325,103 @@ def _process_data_batch(
             continue
 
         seen_ts.add(ts_exch)
+        last_ts = ts_exch
+
         rows.append(
-            (
-                symbol,
-                ts_exch,
-                parsed["open"],
-                parsed["high"],
-                parsed["low"],
-                parsed["close"],
-                parsed["volume"],
-                ASSET_TYPE,
-                source_url,
-                json.dumps(row),
+            MarketData(
+                symbol=symbol,
+                ts=ts_exch,
+                open=parsed["open"],
+                high=parsed["high"],
+                low=parsed["low"],
+                close=parsed["close"],
+                volume=parsed["volume"],
+                asset_type=ASSET_TYPE,
+                source="FMP_intraday",
+                raw_payload=row,
             )
         )
 
+    rows.sort(key=lambda x: x.ts)
     return rows
 
 
 def _insert_batch(
-    conn,
-    table: str,
-    rows: list[tuple],
+    session: Session,
+    rows: list[MarketData],
     symbol: str,
 ) -> int:
-    """
-    Insert validated rows into database.
-    
-    Single responsibility: database layer.
-    Handles table existence check and INSERT operation.
-    
-    Args:
-        conn: Database connection
-        table: Target table name
-        rows: Validated data tuples ready for insertion
-        symbol: Stock symbol (for error logging)
-    
-    Returns:
-        Number of rows inserted
-    """
     if not rows:
         return 0
 
-    dbu.check_table_exists(conn, table)
+    values = [
+        {
+            "symbol": row.symbol,
+            "ts": row.ts,
+            "open": row.open,
+            "high": row.high,
+            "low": row.low,
+            "close": row.close,
+            "volume": row.volume,
+            "asset_type": row.asset_type,
+            "source": row.source,
+            "raw_payload": row.raw_payload,
+        }
+        for row in rows
+    ]
 
-    insert_sql = dbu._build_insert_statement(table)
+    stmt = insert(MarketData).values(values)
+    stmt = stmt.on_conflict_do_update(
+        constraint="unique_symbol_ts_source",
+        set_={
+            "open": stmt.excluded.open,
+            "high": stmt.excluded.high,
+            "low": stmt.excluded.low,
+            "close": stmt.excluded.close,
+            "volume": stmt.excluded.volume,
+            "asset_type": stmt.excluded.asset_type,
+            "raw_payload": stmt.excluded.raw_payload,
+        },
+    )
+
     try:
-        inserted = 0
-        stopped_on_conflict = False
-        with conn.cursor() as cur:
-            for row in rows:
-                cur.execute(insert_sql, row)
-                if cur.fetchone() is None:
-                    stopped_on_conflict = True
-                    break
-                inserted += 1
-        conn.commit()
-    except psycopg.Error as e:
+        session.execute(stmt)
+        session.commit()
+    except Exception as e:
+        session.rollback()
         lu.log_db_error(
             symbol=symbol,
-            operation="INSERT",
+            operation="UPSERT",
             error_type=type(e).__name__,
             error_message=str(e),
-            table_name=table,
+            table_name=STAGING_TABLE_NAME,
             row_count=len(rows),
             tz=TZ,
         )
         raise
 
-    if stopped_on_conflict:
-        print(f"stopped on existing row for {symbol}")
-    print(f"inserted {inserted} rows into {table}")
-    return inserted
-
-
+    print(f"inserted/upserted {len(rows)} rows into {STAGING_TABLE_NAME}")
+    return len(rows)
 
 
 def main():
-    global API_KEY, SYMBOLS, MARKET_TZ, WINDOW_MIN, MARKET_OPEN, MARKET_CLOSE, PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD, BASE_URL, TZ, API_DELAY_SECONDS
-
-    # Validate log directory exists and is writable before proceeding
-    log_dir = Path(lu.ERROR_LOG_DIR)
-    if not log_dir.exists():
-        print(
-            f"ERROR: Log directory does not exist: {log_dir}\n"
-            f"Run the setup script: sudo bash setup_scripts/setup_cronjob_daily_collector.sh",
-            file=sys.stderr
-        )
-        sys.exit(1)
-    if not log_dir.is_dir():
-        print(f"ERROR: Log path exists but is not a directory: {log_dir}", file=sys.stderr)
-        sys.exit(1)
-    if not (log_dir.stat().st_mode & 0o200):
-        print(
-            f"ERROR: Log directory is not writable: {log_dir}\n"
-            f"Check ownership: ls -ld {log_dir}",
-            file=sys.stderr
-        )
-        sys.exit(1)
+    global API_KEY, SYMBOLS, MARKET_TZ, WINDOW_MIN, MARKET_OPEN, MARKET_CLOSE
+    global PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD, BASE_URL, TZ
 
     # re-load env vars at runtime (not import time)
     API_KEY = os.environ.get("FMP_API_KEY", "")
     SYMBOLS = [
-        s.strip() for s in os.environ.get("SYMBOLS", "AAPL,AMD,AMZN,BA,BABA,BAC,C,CSCO,CVX,DIS,F,GE,GOOGL,IBM,INTC,JNJ,JPM,KO,MCD,META,MSFT,NFLX,NVDA,PFE,T,TSLA,VZ,WMT,XOM").split(",") if s.strip()
+        s.strip()
+        for s in os.environ.get(
+            "SYMBOLS",
+            "AAPL,AMD,AMZN,BA,BABA,BAC,C,CSCO,CVX,DIS,F,GE,GOOGL,IBM,INTC,JNJ,JPM,KO,MCD,META,MSFT,NFLX,NVDA,PFE,T,TSLA,VZ,WMT,XOM",
+        ).split(",")
+        if s.strip()
     ]
     MARKET_TZ = os.environ.get("MARKET_TZ", "America/New_York")
-    WINDOW_MIN = int(os.environ.get("WINDOW_MINUTES", "60"))
+    WINDOW_MIN = int(os.environ.get("WINDOW_MINUTES", "5"))
     MARKET_OPEN = os.environ.get("MARKET_OPEN", "04:00")
     MARKET_CLOSE = os.environ.get("MARKET_CLOSE", "21:00")
-    API_DELAY_SECONDS = float(os.environ.get("API_DELAY_SECONDS", "0.5"))
 
     PGHOST = os.environ.get("PGHOST", "")
     PGPORT = int(os.environ.get("PGPORT", "5432"))
@@ -453,13 +442,24 @@ def main():
         sys.exit(1)
 
     start, end = tu.compute_window(now_local, WINDOW_MIN)
-    
-    # Clamp window to market hours (open to close times)
-    market_open_dt = now_local.replace(hour=market_open_time.hour, minute=market_open_time.minute, second=0, microsecond=0)
-    market_close_dt = now_local.replace(hour=market_close_time.hour, minute=market_close_time.minute, second=0, microsecond=0)
+
+    # Clamp window to market hours
+    market_open_dt = now_local.replace(
+        hour=market_open_time.hour,
+        minute=market_open_time.minute,
+        second=0,
+        microsecond=0,
+    )
+    market_close_dt = now_local.replace(
+        hour=market_close_time.hour,
+        minute=market_close_time.minute,
+        second=0,
+        microsecond=0,
+    )
+
     start = max(start, market_open_dt)
     end = min(end, market_close_dt)
-    
+
     # If window is entirely outside market hours, skip collection
     if start >= end:
         print(
@@ -472,15 +472,24 @@ def main():
         print("error: API key is missing; ensure FMP_API_KEY is set", file=sys.stderr)
         sys.exit(1)
 
-
     print()
     print(
         f" [Collector Startup] \n Using Symbols:={SYMBOLS} \n Using Timezone: {MARKET_TZ} \n Using Time Window: {start} -> {end}"
     )
 
-    # connect once and reuse connection for all inserts
+    print("Connecting to database with:")
+    print("HOST:", PGHOST)
+    print("PORT:", PGPORT)
+    print("DATABASE:", PGDATABASE)
+    print("USER:", PGUSER)
+
+    session: Session | None = None
+
     try:
-        conn = dbu.db_connect(PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD)
+        engine = get_engine(PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD)
+        init_db(engine)
+        SessionLocal = get_session_factory(engine)
+        session = SessionLocal()
     except Exception as e:
         lu.log_db_error(
             symbol="N/A",
@@ -495,40 +504,39 @@ def main():
     total = 0
     day_from = tu.ymd(min(start.date(), end.date()))
     day_to = tu.ymd(max(start.date(), end.date()))
-    for sym in SYMBOLS:
-        try:
-            print(
-                f"\n   Calling API with symbol = {sym}   Window Used: {start} -> {end}  (from {day_from} to {day_to}) ---"
-            )
-
-            # Step 1: Fetch data from API
-            data = _fetch_api_data(sym, start, end)
-
-            print("API returned rows:", len(data))
-            if data:
-                print("First:", data[0].get("date"), "Last:", data[-1].get("date"))
-
-            # Step 2: Construct source URL for the source field in the database and for logging purposes
-            source_url = _construct_source_url(sym, start, end)
-
-            # Step 3: Process and validate batch
-            rows = _process_data_batch(data, sym, STG_TABLE_NAME, source_url, start, end, now_local)
-
-            if rows:
-                # Step 4: Insert into database
-                total += _insert_batch(conn, STG_TABLE_NAME, rows, sym)
-            else:
-                print("(no 5 minute bars in this window)")
-        except Exception as e:
-            print(f"[error] {sym}: {e}", file=sys.stderr)
-        finally:
-            if API_DELAY_SECONDS > 0:
-                time.sleep(API_DELAY_SECONDS)
 
     try:
-        conn.close() # close db connection 
-    except Exception as e:
-        print(f"[warning] failed to close database connection: {e}", file=sys.stderr)
+        for sym in SYMBOLS:
+            try:
+                print(
+                    f"\n   Calling API with symbol = {sym}   Window Used: {start} -> {end}  (from {day_from} to {day_to}) ---"
+                )
+
+                # Step 1: Fetch data from API
+                data = _fetch_api_data(sym, start, end)
+
+                print("API returned rows:", len(data))
+                if data:
+                    print("First:", data[0].get("date"), "Last:", data[-1].get("date"))
+
+                # Step 2: Process and validate batch
+                rows = _process_data_batch(data, sym, start, end, now_local)
+
+                # Step 3: Insert into database
+                if rows:
+                    total += _insert_batch(session, rows, sym)
+                else:
+                    print("(no 5 minute bars in this window)")
+
+            except Exception as e:
+                print(f"[error] {sym}: {e}", file=sys.stderr)
+
+    finally:
+        if session is not None:
+            try:
+                session.close()
+            except Exception as e:
+                print(f"[warning] failed to close database session: {e}", file=sys.stderr)
 
     print()
     print(f" [done] total rows ingested: {total}")
