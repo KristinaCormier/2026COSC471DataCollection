@@ -162,7 +162,7 @@ class TestExecuteSqlScript:
         
         # Verify log call has failure status
         log_call_args = mock_log.call_args
-        assert log_call_args[0][2] == 'failure'  # status argument
+        assert log_call_args[0][2] == 'failed'  # status argument
     
     @pytest.mark.unit
     @patch('run_scheduled_operations.read_sql_file')
