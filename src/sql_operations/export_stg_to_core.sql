@@ -76,15 +76,13 @@ log_quality_errors AS (
         symbol,
         ts,
         error_type,
-        error_detail,
-        severity
+        error_detail
     )
     SELECT
         symbol,
         ts,
         quality_issue,
-        to_jsonb(quality_checks),
-        'high'
+        to_jsonb(quality_checks)
     FROM quality_checks
     WHERE quality_issue IS NOT NULL
 ),

@@ -182,7 +182,7 @@ def execute_sql_script(
             logger.error(f"   Duration: {duration:.2f}s")
         
         # Log failure to pipeline_logs
-        log_execution(conn, script_name, 'failure', duration, error_msg)
+        log_execution(conn, script_name, 'failed', duration, error_msg)
         
         return False, error_msg
 
