@@ -15,7 +15,6 @@ WITH ranked AS (
         volume,
         asset_type,
         source,
-        raw_payload,
         ingest_time,
         ROW_NUMBER() OVER (
             PARTITION BY symbol, ts
@@ -77,15 +76,13 @@ log_quality_errors AS (
         symbol,
         ts,
         error_type,
-        error_detail,
-        severity
+        error_detail
     )
     SELECT
         symbol,
         ts,
         quality_issue,
-        to_jsonb(quality_checks),
-        'high'
+        to_jsonb(quality_checks)
     FROM quality_checks
     WHERE quality_issue IS NOT NULL
 ),
@@ -99,7 +96,7 @@ valid AS (
 --------------------------------------------------
 
 core_insert AS (
-    INSERT INTO core_dbms.market_data (
+    INSERT INTO core_dbms.market_data_5m (
         symbol,
         ts,
         open,
@@ -108,9 +105,7 @@ core_insert AS (
         close,
         volume,
         asset_type,
-        source,
-        raw_payload,
-        ingest_time
+        source
     )
     SELECT
         symbol,
@@ -119,19 +114,16 @@ core_insert AS (
         high,
         low,
         close,
-        volume,
+        volume::BIGINT,
         asset_type,
-        source,
-        raw_payload,
-        ingest_time
+        source
     FROM valid
     ON CONFLICT (symbol, ts) DO UPDATE SET
         open = EXCLUDED.open,
         high = EXCLUDED.high,
         low = EXCLUDED.low,
         close = EXCLUDED.close,
-        volume = EXCLUDED.volume,
-        ingest_time = EXCLUDED.ingest_time
+        volume = EXCLUDED.volume
 ),
 
 --------------------------------------------------
@@ -141,17 +133,14 @@ core_insert AS (
 watermark_update AS (
     INSERT INTO operation_logs.pipeline_watermarks (
         pipeline_name,
-        last_processed_ts,
-        record_count
+        last_processed_ts
     )
     SELECT
         'export_stg_to_core',
-        MAX(ts),
-        COUNT(*)
+        MAX(ts)
     FROM valid
     ON CONFLICT (pipeline_name) DO UPDATE SET
-        last_processed_ts = EXCLUDED.last_processed_ts,
-        record_count = EXCLUDED.record_count
+        last_processed_ts = EXCLUDED.last_processed_ts
 )
 
 SELECT 'export_stg_to_core execution complete';
