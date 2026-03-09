@@ -133,17 +133,14 @@ core_insert AS (
 watermark_update AS (
     INSERT INTO operation_logs.pipeline_watermarks (
         pipeline_name,
-        last_processed_ts,
-        record_count
+        last_processed_ts
     )
     SELECT
         'export_stg_to_core',
-        MAX(ts),
-        COUNT(*)
+        MAX(ts)
     FROM valid
     ON CONFLICT (pipeline_name) DO UPDATE SET
-        last_processed_ts = EXCLUDED.last_processed_ts,
-        record_count = EXCLUDED.record_count
+        last_processed_ts = EXCLUDED.last_processed_ts
 )
 
 SELECT 'export_stg_to_core execution complete';
