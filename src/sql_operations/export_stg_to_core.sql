@@ -15,7 +15,6 @@ WITH ranked AS (
         volume,
         asset_type,
         source,
-        raw_payload,
         ingest_time,
         ROW_NUMBER() OVER (
             PARTITION BY symbol, ts
@@ -99,7 +98,7 @@ valid AS (
 --------------------------------------------------
 
 core_insert AS (
-    INSERT INTO core_dbms.market_data (
+    INSERT INTO core_dbms.market_data_5m (
         symbol,
         ts,
         open,
@@ -108,9 +107,7 @@ core_insert AS (
         close,
         volume,
         asset_type,
-        source,
-        raw_payload,
-        ingest_time
+        source
     )
     SELECT
         symbol,
@@ -119,19 +116,16 @@ core_insert AS (
         high,
         low,
         close,
-        volume,
+        volume::BIGINT,
         asset_type,
-        source,
-        raw_payload,
-        ingest_time
+        source
     FROM valid
     ON CONFLICT (symbol, ts) DO UPDATE SET
         open = EXCLUDED.open,
         high = EXCLUDED.high,
         low = EXCLUDED.low,
         close = EXCLUDED.close,
-        volume = EXCLUDED.volume,
-        ingest_time = EXCLUDED.ingest_time
+        volume = EXCLUDED.volume
 ),
 
 --------------------------------------------------
