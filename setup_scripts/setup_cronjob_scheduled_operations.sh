@@ -95,7 +95,9 @@ except Exception as e:
     exit(1)
 " 2>/dev/null; then
     echo "Warning: operation_logs.pipeline_logs table not found"
-    echo "Make sure to run: bash setup_scripts/table_creation_script/operation_logs/*.sql"
+    echo "Make sure to run the SQL scripts using psql:"
+    echo "  psql -h \$PGHOST -d \$PGDATABASE -U \$PGUSER -f setup_scripts/table_creation_script/operation_logs/create_pipeline_logs_table.sql"
+    echo "  (and other operation_logs table creation scripts as needed)"
 fi
 rm -f "$TEMP_CHECK"
 
