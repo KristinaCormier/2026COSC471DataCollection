@@ -73,6 +73,8 @@ TEMP_CHECK=$(mktemp)
 if ! sudo -u "$RUN_AS_USER" "$PYTHON" -c "
 import psycopg
 import os
+from dotenv import load_dotenv
+load_dotenv('$ENVFILE')
 try:
     conn = psycopg.connect(
         host=os.getenv('PGHOST', 'localhost'),
