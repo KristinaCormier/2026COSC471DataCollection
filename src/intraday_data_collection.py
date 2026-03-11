@@ -397,18 +397,25 @@ def _insert_batch(
         ):
             # Backward-compatible fallback for environments that do not have
             # the expected unique key on (symbol, ts).
-            lu.log_db_error(
-                symbol=symbol,
-                operation="UPSERT_FALLBACK",
-                error_type=type(e).__name__,
-                error_message=(
-                    "UPSERT key missing; falling back to INSERT-only batch: "
-                    f"{e}"
-                ),
-                table_name=STAGING_TABLE_NAME,
-                row_count=len(rows),
-                tz=TZ,
-            )
+            try:
+                lu.log_db_error(
+                    symbol=symbol,
+                    operation="UPSERT_FALLBACK",
+                    error_type=type(e).__name__,
+                    error_message=(
+                        "UPSERT key missing; falling back to INSERT-only batch: "
+                        f"{e}"
+                    ),
+                    table_name=STAGING_TABLE_NAME,
+                    row_count=len(rows),
+                    tz=TZ,
+                )
+            except Exception as log_err:
+                print(
+                    "[warning] failed to write UPSERT_FALLBACK log entry: "
+                    f"{log_err}",
+                    file=sys.stderr,
+                )
             try:
                 session.execute(insert_stmt)
                 session.commit()
