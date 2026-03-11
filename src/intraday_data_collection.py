@@ -370,25 +370,67 @@ def _insert_batch(
         for row in rows
     ]
 
-    stmt = insert(MarketData).values(values)
-    stmt = stmt.on_conflict_do_update(
-        constraint="unique_symbol_ts_source",
+    insert_stmt = insert(MarketData).values(values)
+    upsert_stmt = insert_stmt.on_conflict_do_update(
+        index_elements=[MarketData.symbol, MarketData.ts],
         set_={
-            "open": stmt.excluded.open,
-            "high": stmt.excluded.high,
-            "low": stmt.excluded.low,
-            "close": stmt.excluded.close,
-            "volume": stmt.excluded.volume,
-            "asset_type": stmt.excluded.asset_type,
-            "raw_payload": stmt.excluded.raw_payload,
+            "open": insert_stmt.excluded.open,
+            "high": insert_stmt.excluded.high,
+            "low": insert_stmt.excluded.low,
+            "close": insert_stmt.excluded.close,
+            "volume": insert_stmt.excluded.volume,
+            "asset_type": insert_stmt.excluded.asset_type,
+            "raw_payload": insert_stmt.excluded.raw_payload,
         },
     )
 
     try:
-        session.execute(stmt)
+        session.execute(upsert_stmt)
         session.commit()
     except Exception as e:
         session.rollback()
+        err_msg = str(e).lower()
+
+        if (
+            "constraint \"unique_symbol_ts_source\"" in err_msg
+            or "no unique or exclusion constraint matching the on conflict specification" in err_msg
+        ):
+            # Backward-compatible fallback for environments that do not have
+            # the expected unique key on (symbol, ts).
+            lu.log_db_error(
+                symbol=symbol,
+                operation="UPSERT_FALLBACK",
+                error_type=type(e).__name__,
+                error_message=(
+                    "UPSERT key missing; falling back to INSERT-only batch: "
+                    f"{e}"
+                ),
+                table_name=STAGING_TABLE_NAME,
+                row_count=len(rows),
+                tz=TZ,
+            )
+            try:
+                session.execute(insert_stmt)
+                session.commit()
+                print(
+                    "inserted "
+                    f"{len(rows)} rows into {STAGING_TABLE_NAME} "
+                    "(fallback insert: no upsert key found)"
+                )
+                return len(rows)
+            except Exception as fallback_err:
+                session.rollback()
+                lu.log_db_error(
+                    symbol=symbol,
+                    operation="INSERT",
+                    error_type=type(fallback_err).__name__,
+                    error_message=str(fallback_err),
+                    table_name=STAGING_TABLE_NAME,
+                    row_count=len(rows),
+                    tz=TZ,
+                )
+                raise
+
         lu.log_db_error(
             symbol=symbol,
             operation="UPSERT",
