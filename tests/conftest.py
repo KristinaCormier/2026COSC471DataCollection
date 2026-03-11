@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Iterable, Mapping, Sequence
+from typing import Mapping, Sequence
 
 import pytest
 
@@ -39,7 +39,7 @@ def sample_dataframe():
 def db_url() -> str:
     return os.getenv(
         "TEST_DATABASE_URL",
-        "postgresql+psycopg://postgres:postgres@localhost:5432/finance_test",
+        "postgresql+psycopg://cdem:COSC2024@localhost:5432/cade_test",
     )
 
 
@@ -53,7 +53,6 @@ def db_engine(db_url: str):
 
 @pytest.fixture(scope="function")
 def db_connection(db_engine):
-    sqlalchemy = pytest.importorskip("sqlalchemy")
     connection = db_engine.connect()
     transaction = connection.begin()
     yield connection
@@ -72,7 +71,7 @@ def db_session(db_connection):
 
 @pytest.fixture(scope="function")
 def seed_rows(db_session):
-    """Generic seeder for tests with ad‑hoc tables."""
+    """Generic seeder for tests with ad-hoc tables."""
     sqlalchemy = pytest.importorskip("sqlalchemy")
 
     def _seed(table: str, rows: Sequence[Mapping[str, object]]):
@@ -89,6 +88,7 @@ def seed_rows(db_session):
 
 class FakeResponse:
     """Mock HTTP response for API calls."""
+
     def __init__(self, payload, status_code=200):
         self._payload = payload
         self.status_code = status_code
@@ -102,8 +102,10 @@ class FakeResponse:
         return self._payload
 
 
+# Legacy helpers kept for older tests that still use raw-DB fakes.
 class FakeCursor:
-    """Mock database cursor for testing."""
+    """Mock database cursor for legacy/raw-SQL tests."""
+
     def __init__(self, table_exists=True):
         self.queries = []
         self.params = []
@@ -129,7 +131,8 @@ class FakeCursor:
 
 
 class FakeConnection:
-    """Mock database connection for testing."""
+    """Mock database connection for legacy/raw-SQL tests."""
+
     def __init__(self, table_exists=True, should_fail=False):
         self.cursors = []
         self.commits = 0
@@ -153,10 +156,7 @@ class FakeConnection:
 
 @pytest.fixture(scope="function")
 def mock_pg_connection(monkeypatch):
-    """Mock psycopg connection for unit tests (no real DB required)."""
-    # This fixture replaces psycopg.connect with an in-memory stub so tests
-    # can exercise DB-related code paths (like insert/commit/close) without
-    # requiring a running Postgres instance.
+    """Legacy mock psycopg connection for old tests."""
     fake_conn = FakeConnection()
 
     def _fake_connect(*args, **kwargs):
@@ -169,50 +169,34 @@ def mock_pg_connection(monkeypatch):
 @pytest.fixture(scope="function")
 def fake_api_response(monkeypatch):
     """Mock successful API response."""
+
     def mock_get(url, params=None, timeout=None):
-        return FakeResponse([
-            {
-                "date": "2026-02-02 10:05:00",
-                "open": 150.0,
-                "high": 151.0,
-                "low": 149.5,
-                "close": 150.5,
-                "volume": 1000000
-            }
-        ])
+        return FakeResponse(
+            [
+                {
+                    "date": "2026-02-02 10:05:00",
+                    "open": 150.0,
+                    "high": 151.0,
+                    "low": 149.5,
+                    "close": 150.5,
+                    "volume": 1000000,
+                }
+            ]
+        )
+
     monkeypatch.setattr("requests.get", mock_get)
 
 
 @pytest.fixture(scope="function")
-def mock_execute_values(monkeypatch):
-    """Mock executemany to track SQL execution without real DB."""
-    captured = {"rows": None, "sql": None, "called": False}
-
-    def _fake_executemany(self, sql, rows):
-        captured["rows"] = list(rows)
-        captured["sql"] = sql
-        captured["called"] = True
-
-    monkeypatch.setattr("tests.conftest.FakeCursor.executemany", _fake_executemany)
-    return captured
-
-
-@pytest.fixture(scope="function")
 def mock_error_log_dir(tmp_path, monkeypatch):
-    """Mock ERROR_LOG_DIR to use temp directory instead of /usr/local/dc_error_logs.
-    
-    Creates the directory and ensures it's writable, matching the behavior expected
-    after setup script provisioning.
-    """
-    from src import logging_utils
+    """Redirect error logging to a temp directory for tests."""
     from src import intraday_data_collection
-    
+    from src import logging_utils
+
     error_log_dir = tmp_path / "dc_error_logs"
-    # Create the directory since code now expects setup scripts to provision it
     error_log_dir.mkdir(parents=True, exist_ok=True)
-    
-    # Patch the module directly
+
     monkeypatch.setattr(logging_utils, "ERROR_LOG_DIR", error_log_dir)
-    # Also patch the reference in intraday_data_collection.lu
     monkeypatch.setattr(intraday_data_collection.lu, "ERROR_LOG_DIR", error_log_dir)
+
     return error_log_dir
