@@ -1,10 +1,9 @@
-# On execution, this script should fetch stock data for the most recent
-# completed 5 minute interval in EST.
-# It should insert this data into postgres for each symbol provided
-# This script is designed to be executed every 5 minutes throughout every extended market day using a job scheduler
+# On execution, this script should fetch stock data for a user-specified
+# historical date range and insert it into postgres for each symbol provided.
 
 from __future__ import annotations
 
+import argparse
 import os
 import datetime as dt
 import sys
@@ -453,9 +452,73 @@ def _insert_batch(
     return len(rows)
 
 
-def main():
-    global API_KEY, SYMBOLS, MARKET_TZ, WINDOW_MIN, MARKET_OPEN, MARKET_CLOSE
+def _parse_iso_date(value: str) -> dt.date:
+    """Parse a YYYY-MM-DD date string for CLI arguments."""
+    try:
+        return dt.date.fromisoformat(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(
+            f"invalid date '{value}'. expected format YYYY-MM-DD"
+        ) from exc
+
+
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Fetch 5-minute historical bars for a past date range and "
+            "insert/upsert them into the database."
+        )
+    )
+    parser.add_argument(
+        "--from-date",
+        required=True,
+        type=_parse_iso_date,
+        help="Inclusive start date in YYYY-MM-DD format (must be in the past).",
+    )
+    parser.add_argument(
+        "--to-date",
+        required=True,
+        type=_parse_iso_date,
+        help="Inclusive end date in YYYY-MM-DD format (must be in the past).",
+    )
+    parser.add_argument(
+        "--symbols",
+        default=None,
+        help="Optional comma-separated symbol list. Overrides SYMBOLS env var.",
+    )
+    return parser.parse_args(argv)
+
+
+def _validate_historical_range(
+    from_date: dt.date,
+    to_date: dt.date,
+    today_local: dt.date,
+) -> None:
+    if from_date > to_date:
+        raise ValueError("--from-date must be on or before --to-date")
+    if from_date >= today_local or to_date >= today_local:
+        raise ValueError(
+            "both --from-date and --to-date must be earlier than today "
+            f"({today_local.isoformat()})"
+        )
+
+
+def _compute_historical_window(
+    from_date: dt.date,
+    to_date: dt.date,
+    tz: ZoneInfo,
+) -> tuple[dt.datetime, dt.datetime]:
+    """Return inclusive-by-day datetime bounds for filtering API rows."""
+    start = dt.datetime.combine(from_date, dt.time.min, tzinfo=tz)
+    end = dt.datetime.combine(to_date, dt.time(23, 59, 59), tzinfo=tz)
+    return start, end
+
+
+def main(argv: list[str] | None = None):
+    global API_KEY, SYMBOLS, MARKET_TZ
     global PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD, BASE_URL, TZ
+
+    args = _parse_args(argv)
 
     # re-load env vars at runtime (not import time)
     API_KEY = os.environ.get("FMP_API_KEY", "")
@@ -468,9 +531,6 @@ def main():
         if s.strip()
     ]
     MARKET_TZ = os.environ.get("MARKET_TZ", "America/New_York")
-    WINDOW_MIN = int(os.environ.get("WINDOW_MINUTES", "5"))
-    MARKET_OPEN = os.environ.get("MARKET_OPEN", "04:00")
-    MARKET_CLOSE = os.environ.get("MARKET_CLOSE", "21:00")
 
     PGHOST = os.environ.get("PGHOST", "")
     PGPORT = int(os.environ.get("PGPORT", "5432"))
@@ -480,42 +540,23 @@ def main():
 
     BASE_URL = "https://financialmodelingprep.com/api/v3/historical-chart/5min/{symbol}"
 
+    if args.symbols is not None:
+        cli_symbols = [s.strip() for s in args.symbols.split(",") if s.strip()]
+        if not cli_symbols:
+            print("error: --symbols was provided but no valid symbols were found", file=sys.stderr)
+            sys.exit(1)
+        SYMBOLS = cli_symbols
+
     TZ = ZoneInfo(MARKET_TZ)
     now_local = dt.datetime.now(TZ)
 
     try:
-        market_open_time = tu.parse_hhmm(MARKET_OPEN)
-        market_close_time = tu.parse_hhmm(MARKET_CLOSE)
+        _validate_historical_range(args.from_date, args.to_date, now_local.date())
     except ValueError as e:
-        print(f"error: invalid market hours: {e}", file=sys.stderr)
+        print(f"error: invalid historical range: {e}", file=sys.stderr)
         sys.exit(1)
 
-    start, end = tu.compute_window(now_local, WINDOW_MIN)
-
-    # Clamp window to market hours
-    market_open_dt = now_local.replace(
-        hour=market_open_time.hour,
-        minute=market_open_time.minute,
-        second=0,
-        microsecond=0,
-    )
-    market_close_dt = now_local.replace(
-        hour=market_close_time.hour,
-        minute=market_close_time.minute,
-        second=0,
-        microsecond=0,
-    )
-
-    start = max(start, market_open_dt)
-    end = min(end, market_close_dt)
-
-    # If window is entirely outside market hours, skip collection
-    if start >= end:
-        print(
-            "[info] computed window falls outside market hours "
-            f"({MARKET_OPEN}-{MARKET_CLOSE} {MARKET_TZ}); skipping collection"
-        )
-        sys.exit(0)
+    start, end = _compute_historical_window(args.from_date, args.to_date, TZ)
 
     if not API_KEY:
         print("error: API key is missing; ensure FMP_API_KEY is set", file=sys.stderr)
@@ -523,7 +564,7 @@ def main():
 
     print()
     print(
-        f" [Collector Startup] \n Using Symbols:={SYMBOLS} \n Using Timezone: {MARKET_TZ} \n Using Time Window: {start} -> {end}"
+        f" [Historical Collector Startup] \n Using Symbols:={SYMBOLS} \n Using Timezone: {MARKET_TZ} \n Requested Date Range: {args.from_date.isoformat()} -> {args.to_date.isoformat()} \n Using Time Window: {start} -> {end}"
     )
 
     print("Connecting to database with:")
