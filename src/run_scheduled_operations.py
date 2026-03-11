@@ -232,8 +232,11 @@ def main() -> int:
     try:
         for script in sql_files:
             script_name = script.name
-            success, error_msg = execute_sql_script(conn, script, script_name)
-            results[script_name] = (success, error_msg)
+            #success, error_msg = execute_sql_script(conn, script, script_name)
+            #results[script_name] = (success, error_msg)
+            if script_name == "export_stg_to_core.sql": 
+                success, error_msg = execute_sql_script(conn, script, script_name)
+                results[script_name] = (success, error_msg)
     finally:
         conn.close()
     
