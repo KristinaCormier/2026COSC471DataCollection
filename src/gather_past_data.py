@@ -27,10 +27,6 @@ from utils.collector_shared import (
     _validate_and_parse_row,
 )
 
-print("Loaded models from:", MarketData.__module__)
-print("Table columns:", list(MarketData.__table__.columns.keys()))
-
-
 def _parse_iso_date(value: str) -> dt.date:
     """Parse a YYYY-MM-DD date string for CLI arguments."""
     try:
@@ -154,6 +150,8 @@ def main(argv: list[str] | None = None):
     try:
         engine = get_engine(pghost, pgport, pgdatabase, pguser, pgpassword)
         init_db(engine)
+        print("Loaded models from:", MarketData.__module__)
+        print("Table columns:", list(MarketData.__table__.columns.keys()))
         SessionLocal = get_session_factory(engine)
         session = SessionLocal()
     except Exception as e:

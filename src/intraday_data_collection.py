@@ -5,7 +5,6 @@
 
 from __future__ import annotations
 
-from typing import Final
 import datetime as dt
 import os
 import sys
@@ -29,25 +28,13 @@ from utils.collector_shared import (
     _validate_and_parse_row,
 )
 
-print("Loaded models from:", MarketData.__module__)
-print("Table columns:", list(MarketData.__table__.columns.keys()))
-
-DEFAULT_SYMBOLS: Final = (
-    "AAPL,AMD,AMZN,BA,BABA,BAC,C,CSCO,CVX,DIS,F,GE,GOOGL,IBM,INTC,"
-    "JNJ,JPM,KO,MCD,META,MSFT,NFLX,NVDA,PFE,T,TSLA,VZ,WMT,XOM"
-)
-
-
 def main():
     load_dotenv()
 
     api_key = os.environ.get("FMP_API_KEY", "")
     symbols = [
         s.strip()
-        for s in os.environ.get(
-            "SYMBOLS",
-            DEFAULT_SYMBOLS,
-        ).split(",")
+        for s in os.environ.get("SYMBOLS", "").split(",")
         if s.strip()
     ]
     market_tz = os.environ.get("MARKET_TZ", "America/New_York")
@@ -98,6 +85,10 @@ def main():
         )
         sys.exit(0)
 
+    if not symbols:
+        print("error: SYMBOLS is not set; configure it in .env before running", file=sys.stderr)
+        sys.exit(1)
+
     if not api_key:
         print("error: API key is missing; ensure FMP_API_KEY is set", file=sys.stderr)
         sys.exit(1)
@@ -118,6 +109,8 @@ def main():
     try:
         engine = get_engine(pghost, pgport, pgdatabase, pguser, pgpassword)
         init_db(engine)
+        print("Loaded models from:", MarketData.__module__)
+        print("Table columns:", list(MarketData.__table__.columns.keys()))
         SessionLocal = get_session_factory(engine)
         session = SessionLocal()
     except Exception as e:
