@@ -2,8 +2,8 @@ import datetime as dt
 from unittest.mock import MagicMock
 from zoneinfo import ZoneInfo
 
-from src import intraday_data_collection as collector
-from models import MarketData
+import intraday_data_collection as collector
+from model.models import MarketData
 
 
 def test_insert_batch_inserts_rows():
@@ -38,9 +38,8 @@ def test_insert_batch_inserts_rows():
         ),
     ]
 
-    inserted = collector._insert_batch(mock_session, rows, "AAPL")
+    inserted = collector._insert_batch(mock_session, collector.STAGING_TABLE_NAME, rows, "AAPL", tz)
 
-    # Verify the function makes the expected SQLAlchemy calls
     assert mock_session.execute.called
     assert mock_session.commit.called
     assert inserted == 2
@@ -82,10 +81,9 @@ def test_insert_batch_upserts_existing_row():
         )
     ]
 
-    result1 = collector._insert_batch(mock_session, first, "AAPL")
-    result2 = collector._insert_batch(mock_session, second, "AAPL")
+    result1 = collector._insert_batch(mock_session, collector.STAGING_TABLE_NAME, first, "AAPL", tz)
+    result2 = collector._insert_batch(mock_session, collector.STAGING_TABLE_NAME, second, "AAPL", tz)
 
-    # Verify both calls executed and committed
     assert mock_session.execute.call_count == 2
     assert mock_session.commit.call_count == 2
     assert result1 == 1
@@ -119,7 +117,7 @@ def test_insert_batch_falls_back_to_insert_when_upsert_key_missing():
         None,
     ]
 
-    inserted = collector._insert_batch(mock_session, rows, "AAPL")
+    inserted = collector._insert_batch(mock_session, collector.STAGING_TABLE_NAME, rows, "AAPL", tz)
 
     assert inserted == 1
     assert mock_session.execute.call_count == 2

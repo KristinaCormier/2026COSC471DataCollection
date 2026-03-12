@@ -1,7 +1,7 @@
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
-from models import Base
+from model.models import Base
 
 
 def build_postgres_url(host: str, port: int, database: str, user: str, password: str) -> str:

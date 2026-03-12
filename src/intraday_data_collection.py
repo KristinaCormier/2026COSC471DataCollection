@@ -5,492 +5,73 @@
 
 from __future__ import annotations
 
-import os
+from typing import Final
 import datetime as dt
+import os
 import sys
-import requests
-from dotenv import load_dotenv
 from zoneinfo import ZoneInfo
 
-from sqlalchemy.dialects.postgresql import insert
+from dotenv import load_dotenv
 from sqlalchemy.orm import Session
 
-from models import MarketData
+from model.models import MarketData
+from model.orm_db import get_engine, get_session_factory, init_db
 
-from orm_db import get_engine, get_session_factory, init_db
-
-# Internal utilities
-import data_validation as dv
-import time_utils as tu
-import logging_utils as lu
+from utils import logging_utils as lu
+from utils import time_utils as tu
+from utils.collector_shared import (
+    STAGING_TABLE_NAME,
+    _coerce_float,
+    _construct_source_url,
+    _fetch_api_data,
+    _insert_batch,
+    _process_data_batch,
+    _validate_and_parse_row,
+)
 
 print("Loaded models from:", MarketData.__module__)
 print("Table columns:", list(MarketData.__table__.columns.keys()))
-# load in environment vars
-load_dotenv()
 
-API_KEY = os.environ.get("FMP_API_KEY", "")
-SYMBOLS = os.environ.get(
-    "SYMBOLS",
-    "AAPL,AMD,AMZN,BA,BABA,BAC,C,CSCO,CVX,DIS,F,GE,GOOGL,IBM,INTC,JNJ,JPM,KO,MCD,META,MSFT,NFLX,NVDA,PFE,T,TSLA,VZ,WMT,XOM",
-).split(",")
-
-MARKET_TZ = os.environ.get("MARKET_TZ", "America/New_York")
-WINDOW_MIN = int(os.environ.get("WINDOW_MINUTES", "5"))
-MARKET_OPEN = os.environ.get("MARKET_OPEN", "04:00")
-MARKET_CLOSE = os.environ.get("MARKET_CLOSE", "21:00")
-
-# DB connection vars
-PGHOST = os.environ.get("PGHOST", "")
-PGPORT = int(os.environ.get("PGPORT", "5432"))
-PGDATABASE = os.environ.get("PGDATABASE", "")
-PGUSER = os.environ.get("PGUSER", "")
-PGPASSWORD = os.environ.get("PGPASSWORD", "")
-
-BASE_URL = "https://financialmodelingprep.com/api/v3/historical-chart/5min/{symbol}"
-
-ASSET_TYPE = "stock"
-
-DATA_FIELDS = ("date", "open", "high", "low", "close", "volume")
-REQUIRED_NUMERIC_FIELDS = ("open", "high", "low", "volume")
-
-# cleanup symbols
-SYMBOLS = [s.strip() for s in SYMBOLS if s.strip()]
-
-# timezone handling
-TZ = ZoneInfo(MARKET_TZ)
-
-# ORM table name used in logs
-STAGING_TABLE_NAME = "stg_raw.market_data"
-
-
-def _coerce_float(value) -> tuple[float | None, bool]:
-    """
-    Attempt to coerce a value to float.
-
-    Returns:
-        Tuple of (coerced_value, success)
-    """
-    if value is None:
-        return None, False
-    if isinstance(value, bool):
-        return None, False
-    if isinstance(value, (int, float)):
-        return float(value), True
-    if isinstance(value, str):
-        try:
-            return float(value), True
-        except ValueError:
-            return None, False
-    return None, False
-
-
-def _validate_and_parse_row(
-    row: dict,
-    symbol: str,
-    hard_invalid_found: bool,
-    last_ts: dt.datetime | None,
-    now_local: dt.datetime | None,
-    tz: ZoneInfo,
-) -> tuple[dt.datetime | None, dict | None, bool]:
-    """
-    Validate and parse a single row from API data.
-
-    Checks for all-empty fields, timestamp validity, and schema/type compliance.
-    Logs errors to db_insert_errors for invalid rows.
-
-    Args:
-        row: Raw API row dictionary
-        symbol: Stock symbol being processed
-        hard_invalid_found: Whether any hard invalids found so far in batch
-        last_ts: Previous row's timestamp (for inference)
-        now_local: Current wall-clock time (for inference)
-        tz: Timezone for timestamps
-
-    Returns:
-        Tuple of (timestamp, parsed_values_dict, updated_hard_invalid_found)
-        or (None, None, hard_invalid_found) if row rejected
-    """
-    missing_fields, all_empty = dv.analyze_row(row, DATA_FIELDS)
-
-    if all_empty:
-        lu.log_db_error(
-            symbol=symbol,
-            operation="LOAD",
-            error_type="AllFieldsEmpty",
-            error_message="all fields empty",
-            table_name=STAGING_TABLE_NAME,
-            row_count=1,
-            tz=tz,
-        )
-        return None, None, True
-
-    ts_str = row.get("date")
-    ts_exch = None
-
-    # handle missing/invalid timestamp
-    if dv.is_empty(ts_str):
-        if hard_invalid_found:
-            lu.log_db_error(
-                symbol=symbol,
-                operation="LOAD",
-                error_type="MissingDate",
-                error_message="date field missing",
-                table_name=STAGING_TABLE_NAME,
-                row_count=1,
-                tz=tz,
-            )
-            return None, None, hard_invalid_found
-
-        ts_exch, _ = tu.infer_timestamp(last_ts, now_local, "date_missing", tz)
-    else:
-        try:
-            ts_exch = tu.parse_api_time(ts_str, tz)
-        except Exception:
-            lu.log_db_error(
-                symbol=symbol,
-                operation="LOAD",
-                error_type="InvalidTimestamp",
-                error_message="invalid timestamp format",
-                table_name=STAGING_TABLE_NAME,
-                row_count=1,
-                tz=tz,
-            )
-            return None, None, True
-
-    # enforce schema/types before insertion
-    invalid_fields = []
-    parsed: dict[str, float | None] = {}
-
-    for field in REQUIRED_NUMERIC_FIELDS:
-        val = row.get(field)
-        if dv.is_empty(val):
-            invalid_fields.append(field)
-            continue
-
-        num, ok = _coerce_float(val)
-        if not ok:
-            invalid_fields.append(field)
-            continue
-
-        parsed[field] = num
-
-    close_val = row.get("close")
-    if dv.is_empty(close_val):
-        parsed["close"] = None
-    else:
-        num, ok = _coerce_float(close_val)
-        if not ok:
-            invalid_fields.append("close")
-        else:
-            parsed["close"] = num
-
-    if invalid_fields:
-        lu.log_db_error(
-            symbol=symbol,
-            operation="LOAD",
-            error_type="SchemaTypeMismatch",
-            error_message=f"invalid fields: {','.join(sorted(set(invalid_fields)))}",
-            table_name=STAGING_TABLE_NAME,
-            row_count=1,
-            tz=tz,
-        )
-        return None, None, True
-
-    return ts_exch, parsed, hard_invalid_found
-
-def _construct_source_url(
-    symbol: str,
-    start: dt.datetime,
-    end: dt.datetime,
-    ) -> str:
-    """
-    Construct the API URL for a given symbol.
-    
-    Args:
-        symbol: Stock symbol
-    Returns:
-        Fully formatted API URL for the symbol
-    """
-    day_from = tu.ymd(min(start.date(), end.date()))
-    day_to = tu.ymd(max(start.date(), end.date()))
-    url = BASE_URL.format(symbol=symbol)
-    params = {"from": day_from, "to": day_to, "extended": "true"}
-    return f"{url}?{requests.compat.urlencode(params)}"
-
-
-def _fetch_api_data(
-    symbol: str,
-    start: dt.datetime,
-    end: dt.datetime
-    ) -> list[dict]:
-    """
-    Fetch stock data from API.
-
-    Single responsibility: API communication layer.
-    Raises on network or API errors.
-
-    Args:
-        symbol: Stock symbol
-        start: Start time for data window
-        end: End time for data window
-
-    Returns:
-        List of raw API data rows
-    """
-    day_from = tu.ymd(min(start.date(), end.date()))
-    day_to = tu.ymd(max(start.date(), end.date()))
-    url = BASE_URL.format(symbol=symbol)
-    params = {
-        "from": day_from,
-        "to": day_to,
-        "extended": "true",
-        "apikey": API_KEY,
-    }
-
-    try:
-        r = requests.get(url, params=params, timeout=25)
-        r.raise_for_status()
-        return r.json() if r.content else []
-    except requests.exceptions.HTTPError as e:
-        lu.log_api_error(
-            symbol=symbol,
-            url=url,
-            error_type="HTTPError",
-            error_message=str(e),
-            status_code=r.status_code if hasattr(r, "status_code") else None,
-            tz=TZ,
-        )
-        raise
-    except requests.exceptions.Timeout as e:
-        lu.log_api_error(
-            symbol=symbol,
-            url=url,
-            error_type="Timeout",
-            error_message=str(e),
-            tz=TZ,
-        )
-        raise
-    except requests.exceptions.RequestException as e:
-        lu.log_api_error(
-            symbol=symbol,
-            url=url,
-            error_type=type(e).__name__,
-            error_message=str(e),
-            tz=TZ,
-        )
-        raise
-
-
-def _process_data_batch(
-    data: list[dict],
-    symbol: str,
-    start: dt.datetime,
-    end: dt.datetime,
-    now_local: dt.datetime | None,
-) -> list[MarketData]:
-    hard_invalid_found = False
-    rows: list[MarketData] = []
-    last_ts = None
-    seen_ts: set[dt.datetime] = set()
-
-    for row in data:
-        ts_exch, parsed, hard_invalid_found = _validate_and_parse_row(
-            row=row,
-            symbol=symbol,
-            hard_invalid_found=hard_invalid_found,
-            last_ts=last_ts,
-            now_local=now_local,
-            tz=TZ,
-        )
-
-        if ts_exch is None or parsed is None:
-            continue
-
-        # keep only rows in the requested collection window
-        if ts_exch < start or ts_exch >= end:
-            continue
-
-        if ts_exch in seen_ts:
-            lu.log_db_error(
-                symbol=symbol,
-                operation="LOAD",
-                error_type="DuplicateTimestamp",
-                error_message="duplicate timestamp in batch",
-                table_name=STAGING_TABLE_NAME,
-                row_count=1,
-                tz=TZ,
-            )
-            hard_invalid_found = True
-            continue
-
-        seen_ts.add(ts_exch)
-        last_ts = ts_exch
-
-        rows.append(
-            MarketData(
-                symbol=symbol,
-                ts=ts_exch,
-                open=parsed["open"],
-                high=parsed["high"],
-                low=parsed["low"],
-                close=parsed["close"],
-                volume=parsed["volume"],
-                asset_type=ASSET_TYPE,
-                source="FMP_intraday",
-                raw_payload=row,
-            )
-        )
-
-    rows.sort(key=lambda x: x.ts)
-    return rows
-
-
-def _insert_batch(
-    session: Session,
-    rows: list[MarketData],
-    symbol: str,
-) -> int:
-    if not rows:
-        return 0
-
-    values = [
-        {
-            "symbol": row.symbol,
-            "ts": row.ts,
-            "open": row.open,
-            "high": row.high,
-            "low": row.low,
-            "close": row.close,
-            "volume": row.volume,
-            "asset_type": row.asset_type,
-            "source": row.source,
-            "raw_payload": row.raw_payload,
-        }
-        for row in rows
-    ]
-
-    insert_stmt = insert(MarketData).values(values)
-    upsert_stmt = insert_stmt.on_conflict_do_update(
-        index_elements=[MarketData.symbol, MarketData.ts],
-        set_={
-            "open": insert_stmt.excluded.open,
-            "high": insert_stmt.excluded.high,
-            "low": insert_stmt.excluded.low,
-            "close": insert_stmt.excluded.close,
-            "volume": insert_stmt.excluded.volume,
-            "asset_type": insert_stmt.excluded.asset_type,
-            "raw_payload": insert_stmt.excluded.raw_payload,
-        },
-    )
-
-    try:
-        session.execute(upsert_stmt)
-        session.commit()
-    except Exception as e:
-        session.rollback()
-        err_msg = str(e).lower()
-
-        if (
-            "constraint \"unique_symbol_ts_source\"" in err_msg
-            or "no unique or exclusion constraint matching the on conflict specification" in err_msg
-        ):
-            # Backward-compatible fallback for environments that do not have
-            # the expected unique key on (symbol, ts).
-            try:
-                lu.log_db_error(
-                    symbol=symbol,
-                    operation="UPSERT_FALLBACK",
-                    error_type=type(e).__name__,
-                    error_message=(
-                        "UPSERT key missing; falling back to INSERT-only batch: "
-                        f"{e}"
-                    ),
-                    table_name=STAGING_TABLE_NAME,
-                    row_count=len(rows),
-                    tz=TZ,
-                )
-            except Exception as log_err:
-                print(
-                    "[warning] failed to write UPSERT_FALLBACK log entry: "
-                    f"{log_err}",
-                    file=sys.stderr,
-                )
-            try:
-                session.execute(insert_stmt)
-                session.commit()
-                print(
-                    "inserted "
-                    f"{len(rows)} rows into {STAGING_TABLE_NAME} "
-                    "(fallback insert: no upsert key found)"
-                )
-                return len(rows)
-            except Exception as fallback_err:
-                session.rollback()
-                lu.log_db_error(
-                    symbol=symbol,
-                    operation="INSERT",
-                    error_type=type(fallback_err).__name__,
-                    error_message=str(fallback_err),
-                    table_name=STAGING_TABLE_NAME,
-                    row_count=len(rows),
-                    tz=TZ,
-                )
-                raise
-
-        lu.log_db_error(
-            symbol=symbol,
-            operation="UPSERT",
-            error_type=type(e).__name__,
-            error_message=str(e),
-            table_name=STAGING_TABLE_NAME,
-            row_count=len(rows),
-            tz=TZ,
-        )
-        raise
-
-    print(f"inserted/upserted {len(rows)} rows into {STAGING_TABLE_NAME}")
-    return len(rows)
+DEFAULT_SYMBOLS: Final = (
+    "AAPL,AMD,AMZN,BA,BABA,BAC,C,CSCO,CVX,DIS,F,GE,GOOGL,IBM,INTC,"
+    "JNJ,JPM,KO,MCD,META,MSFT,NFLX,NVDA,PFE,T,TSLA,VZ,WMT,XOM"
+)
 
 
 def main():
-    global API_KEY, SYMBOLS, MARKET_TZ, WINDOW_MIN, MARKET_OPEN, MARKET_CLOSE
-    global PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD, BASE_URL, TZ
+    load_dotenv()
 
-    # re-load env vars at runtime (not import time)
-    API_KEY = os.environ.get("FMP_API_KEY", "")
-    SYMBOLS = [
+    api_key = os.environ.get("FMP_API_KEY", "")
+    symbols = [
         s.strip()
         for s in os.environ.get(
             "SYMBOLS",
-            "AAPL,AMD,AMZN,BA,BABA,BAC,C,CSCO,CVX,DIS,F,GE,GOOGL,IBM,INTC,JNJ,JPM,KO,MCD,META,MSFT,NFLX,NVDA,PFE,T,TSLA,VZ,WMT,XOM",
+            DEFAULT_SYMBOLS,
         ).split(",")
         if s.strip()
     ]
-    MARKET_TZ = os.environ.get("MARKET_TZ", "America/New_York")
-    WINDOW_MIN = int(os.environ.get("WINDOW_MINUTES", "5"))
-    MARKET_OPEN = os.environ.get("MARKET_OPEN", "04:00")
-    MARKET_CLOSE = os.environ.get("MARKET_CLOSE", "21:00")
+    market_tz = os.environ.get("MARKET_TZ", "America/New_York")
+    window_min = int(os.environ.get("WINDOW_MINUTES", "5"))
+    market_open = os.environ.get("MARKET_OPEN", "04:00")
+    market_close = os.environ.get("MARKET_CLOSE", "21:00")
 
-    PGHOST = os.environ.get("PGHOST", "")
-    PGPORT = int(os.environ.get("PGPORT", "5432"))
-    PGDATABASE = os.environ.get("PGDATABASE", "")
-    PGUSER = os.environ.get("PGUSER", "")
-    PGPASSWORD = os.environ.get("PGPASSWORD", "")
+    pghost = os.environ.get("PGHOST", "")
+    pgport = int(os.environ.get("PGPORT", "5432"))
+    pgdatabase = os.environ.get("PGDATABASE", "")
+    pguser = os.environ.get("PGUSER", "")
+    pgpassword = os.environ.get("PGPASSWORD", "")
 
-    BASE_URL = "https://financialmodelingprep.com/api/v3/historical-chart/5min/{symbol}"
-
-    TZ = ZoneInfo(MARKET_TZ)
-    now_local = dt.datetime.now(TZ)
+    tz = ZoneInfo(market_tz)
+    now_local = dt.datetime.now(tz)
 
     try:
-        market_open_time = tu.parse_hhmm(MARKET_OPEN)
-        market_close_time = tu.parse_hhmm(MARKET_CLOSE)
+        market_open_time = tu.parse_hhmm(market_open)
+        market_close_time = tu.parse_hhmm(market_close)
     except ValueError as e:
         print(f"error: invalid market hours: {e}", file=sys.stderr)
         sys.exit(1)
 
-    start, end = tu.compute_window(now_local, WINDOW_MIN)
+    start, end = tu.compute_window(now_local, window_min)
 
     # Clamp window to market hours
     market_open_dt = now_local.replace(
@@ -513,29 +94,29 @@ def main():
     if start >= end:
         print(
             "[info] computed window falls outside market hours "
-            f"({MARKET_OPEN}-{MARKET_CLOSE} {MARKET_TZ}); skipping collection"
+            f"({market_open}-{market_close} {market_tz}); skipping collection"
         )
         sys.exit(0)
 
-    if not API_KEY:
+    if not api_key:
         print("error: API key is missing; ensure FMP_API_KEY is set", file=sys.stderr)
         sys.exit(1)
 
     print()
     print(
-        f" [Collector Startup] \n Using Symbols:={SYMBOLS} \n Using Timezone: {MARKET_TZ} \n Using Time Window: {start} -> {end}"
+        f" [Collector Startup] \n Using Symbols:={symbols} \n Using Timezone: {market_tz} \n Using Time Window: {start} -> {end}"
     )
 
     print("Connecting to database with:")
-    print("HOST:", PGHOST)
-    print("PORT:", PGPORT)
-    print("DATABASE:", PGDATABASE)
-    print("USER:", PGUSER)
+    print("HOST:", pghost)
+    print("PORT:", pgport)
+    print("DATABASE:", pgdatabase)
+    print("USER:", pguser)
 
     session: Session | None = None
 
     try:
-        engine = get_engine(PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD)
+        engine = get_engine(pghost, pgport, pgdatabase, pguser, pgpassword)
         init_db(engine)
         SessionLocal = get_session_factory(engine)
         session = SessionLocal()
@@ -545,7 +126,7 @@ def main():
             operation="CONNECT",
             error_type=type(e).__name__,
             error_message=str(e),
-            tz=TZ,
+            tz=tz,
         )
         print(f"cannot connect to Postgres: {e}", file=sys.stderr)
         sys.exit(2)
@@ -555,25 +136,37 @@ def main():
     day_to = tu.ymd(max(start.date(), end.date()))
 
     try:
-        for sym in SYMBOLS:
+        for sym in symbols:
             try:
                 print(
                     f"\n   Calling API with symbol = {sym}   Window Used: {start} -> {end}  (from {day_from} to {day_to}) ---"
                 )
 
                 # Step 1: Fetch data from API
-                data = _fetch_api_data(sym, start, end)
+                data = _fetch_api_data(sym, start, end, api_key, tz)
 
                 print("API returned rows:", len(data))
                 if data:
                     print("First:", data[0].get("date"), "Last:", data[-1].get("date"))
 
-                # Step 2: Process and validate batch
-                rows = _process_data_batch(data, sym, start, end, now_local)
+                # Step 2: Construct source URL for the source field in the database and for logging purposes
+                source_url = _construct_source_url(sym, start, end)
 
-                # Step 3: Insert into database
+                # Step 3: Process and validate batch
+                rows = _process_data_batch(
+                    data,
+                    sym,
+                    STAGING_TABLE_NAME,
+                    source_url,
+                    start,
+                    end,
+                    now_local,
+                    tz,
+                )
+
+                # Step 4: Insert into database
                 if rows:
-                    total += _insert_batch(session, rows, sym)
+                    total += _insert_batch(session, STAGING_TABLE_NAME, rows, sym, tz)
                 else:
                     print("(no 5 minute bars in this window)")
 

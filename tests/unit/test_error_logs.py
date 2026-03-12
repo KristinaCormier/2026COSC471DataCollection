@@ -7,7 +7,7 @@ import datetime as dt
 from zoneinfo import ZoneInfo
 import pytest
 
-from src import logging_utils as mod
+from utils import logging_utils as mod
 
 
 TZ = ZoneInfo("America/New_York")
@@ -167,7 +167,7 @@ def test_all_error_logs_use_iso_timestamps(mock_error_log_dir):
 def test_error_log_directory_validation_fails_if_missing(monkeypatch):
     """Test that _validate_log_dir raises FileNotFoundError if directory missing."""
     from pathlib import Path
-    from src import logging_utils
+    from utils import logging_utils
     
     missing_dir = Path("/nonexistent/path/dc_error_logs")
     
@@ -180,7 +180,7 @@ def test_error_log_directory_validation_fails_if_missing(monkeypatch):
 
 def test_error_log_directory_validation_succeeds_if_exists_and_writable(mock_error_log_dir):
     """Test that _validate_log_dir succeeds for writable directory."""
-    from src import logging_utils
+    from utils import logging_utils
     
     # Should not raise
     logging_utils._validate_log_dir(mock_error_log_dir)
@@ -189,7 +189,7 @@ def test_error_log_directory_validation_succeeds_if_exists_and_writable(mock_err
 def test_error_log_file_creation_requires_valid_directory(tmp_path):
     """Test that _ensure_log_file validates parent directory before creating file."""
     from pathlib import Path
-    from src import logging_utils
+    from utils import logging_utils
     
     missing_parent = tmp_path / "missing" / "dc_error_logs" / "api_errors.csv"
     

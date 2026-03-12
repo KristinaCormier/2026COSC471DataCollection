@@ -190,8 +190,8 @@ def fake_api_response(monkeypatch):
 @pytest.fixture(scope="function")
 def mock_error_log_dir(tmp_path, monkeypatch):
     """Redirect error logging to a temp directory for tests."""
-    from src import intraday_data_collection
-    from src import logging_utils
+    import intraday_data_collection
+    from utils import logging_utils
 
     error_log_dir = tmp_path / "dc_error_logs"
     error_log_dir.mkdir(parents=True, exist_ok=True)

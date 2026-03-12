@@ -4,7 +4,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from src import gather_past_data as gather
+import gather_past_data as gather
 
 
 def test_parse_iso_date_accepts_valid_value():

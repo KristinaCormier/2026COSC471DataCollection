@@ -8,7 +8,7 @@ import pytest
 from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
-from src import intraday_data_collection as collector
+import intraday_data_collection as collector
 from tests.conftest import FakeResponse
 
 
@@ -135,7 +135,7 @@ def test_main_continues_after_symbol_error(mock_market_hours_time, mock_env_comp
     fake_session = FakeSession()
     call_count = {"count": 0}
 
-    def mock_fetch_api_data(symbol, start, end):
+    def mock_fetch_api_data(symbol, start, end, api_key, tz):
         call_count["count"] += 1
         if symbol == "AAPL":
             raise Exception("API rate limit exceeded")
@@ -170,15 +170,14 @@ def test_main_loads_env_vars_at_runtime(mock_market_hours_time, monkeypatch, cap
     fake_session = FakeSession()
 
     def mock_get_engine(host, port, dbname, user, password):
-        assert collector.API_KEY == "runtime_key"
-        assert collector.SYMBOLS == ["GOOGL"]
-        assert collector.MARKET_TZ == "America/Chicago"
-        assert collector.WINDOW_MIN == 30
-        assert collector.PGHOST == "testhost"
-        assert collector.PGPORT == 5433
+        assert host == "testhost"
+        assert port == 5433
+        assert dbname == "runtime_db"
+        assert user == "runtime_user"
         return object()
 
-    def mock_fetch_api_data(symbol, start, end):
+    def mock_fetch_api_data(symbol, start, end, api_key, tz):
+        assert api_key == "runtime_key"
         return []
 
     monkeypatch.setattr(collector, "get_engine", mock_get_engine)
@@ -197,7 +196,7 @@ def test_main_computes_time_window(mock_market_hours_time, mock_env_complete, mo
     fake_session = FakeSession()
     captured_window = {"start": None, "end": None}
 
-    def mock_fetch_api_data(symbol, start, end):
+    def mock_fetch_api_data(symbol, start, end, api_key, tz):
         captured_window["start"] = start
         captured_window["end"] = end
         return []

@@ -8,21 +8,21 @@ import os
 import pytest
 from zoneinfo import ZoneInfo
 
-from src import intraday_data_collection as collector
-from src import db_utils as dbu
-from src import time_utils as tu
+import intraday_data_collection as collector
+from utils import db_utils as dbu
+from utils import time_utils as tu
 
 
 # Setup
 
 @pytest.fixture
 def test_db_config(monkeypatch):
-    """Configure collector with test database credentials."""
-    monkeypatch.setattr(collector, "PGHOST", os.getenv("PGHOST", "localhost"))
-    monkeypatch.setattr(collector, "PGPORT", int(os.getenv("PGPORT", "5432")))
-    monkeypatch.setattr(collector, "PGDATABASE", os.getenv("PGDATABASE", "test_db"))
-    monkeypatch.setattr(collector, "PGUSER", os.getenv("PGUSER", "postgres"))
-    monkeypatch.setattr(collector, "PGPASSWORD", os.getenv("PGPASSWORD", ""))
+    """Configure test database credentials via environment variables."""
+    monkeypatch.setenv("PGHOST", os.getenv("PGHOST", "localhost"))
+    monkeypatch.setenv("PGPORT", os.getenv("PGPORT", "5432"))
+    monkeypatch.setenv("PGDATABASE", os.getenv("PGDATABASE", "test_db"))
+    monkeypatch.setenv("PGUSER", os.getenv("PGUSER", "postgres"))
+    monkeypatch.setenv("PGPASSWORD", os.getenv("PGPASSWORD", ""))
 
 
 # Execute
@@ -35,15 +35,8 @@ def test_db_config(monkeypatch):
 @pytest.mark.integration
 def test_db_connect_with_invalid_credentials_fails(monkeypatch):
     # Given: Invalid database credentials
-    monkeypatch.setattr(collector, "PGHOST", "invalid_host")
-    monkeypatch.setattr(collector, "PGPORT", 9999)
-    monkeypatch.setattr(collector, "PGDATABASE", "nonexistent_db")
-    monkeypatch.setattr(collector, "PGUSER", "invalid_user")
-    monkeypatch.setattr(collector, "PGPASSWORD", "invalid_password")
-
     # When/Then: Attempting to connect should raise an exception (¬Q observed, proving ¬P)
     with pytest.raises(Exception):
-
         conn = dbu.db_connect("invalid_host", 9999, "nonexistent_db", "invalid_user", "invalid_password")
         conn.close()
 
@@ -60,11 +53,11 @@ def test_db_connect_succeeds_with_valid_credentials(test_db_config):
     # When: Establishing connection
     try:
         conn = dbu.db_connect(
-            collector.PGHOST,
-            collector.PGPORT,
-            collector.PGDATABASE,
-            collector.PGUSER,
-            collector.PGPASSWORD
+            os.getenv("PGHOST", "localhost"),
+            int(os.getenv("PGPORT", "5432")),
+            os.getenv("PGDATABASE", "test_db"),
+            os.getenv("PGUSER", "postgres"),
+            os.getenv("PGPASSWORD", ""),
         )
         
         # Then: Connection should be established successfully
@@ -92,11 +85,11 @@ def test_check_table_exists_raises_for_nonexistent_table(test_db_config):
     # Given: A database connection and a non-existent table name
     try:
         conn = dbu.db_connect(
-            collector.PGHOST,
-            collector.PGPORT,
-            collector.PGDATABASE,
-            collector.PGUSER,
-            collector.PGPASSWORD
+            os.getenv("PGHOST", "localhost"),
+            int(os.getenv("PGPORT", "5432")),
+            os.getenv("PGDATABASE", "test_db"),
+            os.getenv("PGUSER", "postgres"),
+            os.getenv("PGPASSWORD", ""),
         )
     except Exception as e:
         pytest.skip(f"Database not available: {e}")
@@ -121,11 +114,11 @@ def test_check_table_exists_passes_for_existing_table(test_db_config):
     # Note: This assumes market.aapl or similar exists from schema setup
     try:
         conn = dbu.db_connect(
-            collector.PGHOST,
-            collector.PGPORT,
-            collector.PGDATABASE,
-            collector.PGUSER,
-            collector.PGPASSWORD
+            os.getenv("PGHOST", "localhost"),
+            int(os.getenv("PGPORT", "5432")),
+            os.getenv("PGDATABASE", "test_db"),
+            os.getenv("PGUSER", "postgres"),
+            os.getenv("PGPASSWORD", ""),
         )
     except Exception as e:
         pytest.skip(f"Database not available: {e}")
