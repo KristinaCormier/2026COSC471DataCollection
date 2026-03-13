@@ -65,8 +65,9 @@ If this PR modifies the database:
 - [ ] Dropped table or column
 
 Describe the migration:
-- Example: "Run `psql -f setup_scripts/table_creation_script/.../add_source_column.sql`"
-- Example: "No migration needed; tables created automatically by `init_db()` on first run"
+- Example: "Run `python -m alembic upgrade head`"
+- Example: "Add and document a new Alembic revision under `alembic/versions/`"
+- Example: "No migration needed (docs/tests/runtime-only change)"
 
 ## Environment Variables
 

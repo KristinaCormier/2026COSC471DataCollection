@@ -12,18 +12,22 @@ This audit tracks remaining inconsistencies with the project goal of SQLAlchemy 
 - Alembic baseline migration path added (`alembic/`, `alembic/versions/20260312_0001_baseline_schema.py`).
 - Cron installers now support default user-mode setup with project-local wrappers and no hard requirement on `/etc/cron.d` or `/usr/local/bin`.
 - `.env.template` converted back to valid env syntax and updated for cron mode configuration.
+- Legacy CSV shell loader replaced by Python ORM loader (`src/load_stg_raw_market_data.py`) with shell wrapper compatibility.
+- `setup_scripts/table_creation_script/` documentation is now explicitly marked as legacy reference, and primary docs point to Alembic/models.
+- README now includes a local bootstrap sequence for fresh-environment setup without cron/root dependencies.
+- `tests/README.md` now documents separate unit-only and integration/pipeline execution tracks.
 
 ## Remaining Inconsistencies (Prioritized)
 
-1. High: Legacy table-creation SQL scripts still present
+1. Medium: Legacy table-creation SQL artifacts still present
 - Location: `setup_scripts/table_creation_script/**/*.sql`
 - Impact: Duplicates schema source-of-truth and risks drift from ORM models + Alembic.
-- Recommended next step: Mark these scripts as legacy/archived and phase out direct usage in setup docs once migration rollout is validated.
+- Recommended next step: Keep as historical references for one transition window, then archive/remove once migration-only rollout is fully validated.
 
-2. High: CSV bulk loader still relies on raw SQL + `psql`
-- Location: `setup_scripts/load_stg_raw_market_data.sh`
-- Impact: Bypasses ORM/session rules and makes behavior harder to test under Python-only workflows.
-- Recommended next step: Replace with a Python CLI that parses CSV and bulk inserts via ORM/Core insert statements in a managed session.
+2. Medium: CSV import now uses ORM, but rollout cleanup remains
+- Location: `src/load_stg_raw_market_data.py`, `setup_scripts/load_stg_raw_market_data.sh`
+- Impact: Core behavior is now ORM-based, but docs/scripts should continue converging on Python-first usage.
+- Recommended next step: Keep wrapper for transition, then retire it after downstream automation updates.
 
 3. Medium: Server replication/backup setup is intentionally system-coupled
 - Location: `setup_scripts/database_setup/*.sh`, `setup_scripts/server_setup/*.sh`
@@ -36,7 +40,7 @@ This audit tracks remaining inconsistencies with the project goal of SQLAlchemy 
 - Recommended next step: Keep integration tests on PostgreSQL, but expand SQLite-compatible unit tests for transform logic and utility modules.
 
 ## Next Implementation Milestones
-1. Add Python replacement for `load_stg_raw_market_data.sh`.
-2. Move table-creation SQL docs to "legacy reference" and point setup flow to Alembic.
-3. Add a lightweight local bootstrap command sequence in README for first-time setup.
-4. Split test instructions into "unit-only (fast/local)" and "integration (PostgreSQL required)" tracks.
+1. Remove shell wrapper once all users and automation invoke the Python loader directly.
+2. Archive/remove legacy SQL files after migration-only rollout validation.
+3. Expand SQLite-friendly unit coverage for non-PostgreSQL-specific logic.
+4. Keep production-only setup scripts isolated from local onboarding paths in docs.

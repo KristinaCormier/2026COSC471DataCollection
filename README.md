@@ -65,7 +65,17 @@ python -m alembic upgrade head
 python -c "from model.orm_db import build_postgres_url, get_engine, init_db; import os; init_db(get_engine(os.getenv('PGHOST', 'localhost'), int(os.getenv('PGPORT', '5432')), os.getenv('PGDATABASE', 'market_data'), os.getenv('PGUSER', 'user'), os.getenv('PGPASSWORD', 'password')))"
 ```
 
-### 4. Optional Cron / Server Setup
+### 4. Local Bootstrap (Fresh VM)
+```bash
+# Fast local validation path (no sudo/cron required)
+source .venv/bin/activate
+python -m alembic upgrade head
+pytest tests/unit/ -v
+python src/intraday_data_collection.py
+python src/run_scheduled_operations.py
+```
+
+### 5. Optional Cron / Server Setup
 ```bash
 # Optional operational setup (.env required)
 cd setup_scripts
@@ -82,7 +92,7 @@ sudo CRON_INSTALL_MODE=system bash setup_cronjob_scheduled_operations.sh
 
 For detailed setup instructions, see [setup_scripts/README.md](setup_scripts/README.md).
 
-### 4. Manual Testing
+### 6. Manual Testing
 ```bash
 # Collect the latest completed interval
 python src/intraday_data_collection.py
@@ -146,7 +156,7 @@ Audit trail for debugging and monitoring. Tables include:
 - **`backup_logs`**: Backup/restore event history
 - **`cast_errors`**: Type conversion failures during ingestion
 
-See [setup_scripts/table_creation_script/operation_logs/README.MD](setup_scripts/table_creation_script/operation_logs/README.MD) for table details.
+See `src/model/models.py` and `alembic/versions/20260312_0001_baseline_schema.py` for the canonical table definitions.
 
 ## Configuration Reference
 
@@ -191,7 +201,8 @@ See [setup_scripts/table_creation_script/operation_logs/README.MD](setup_scripts
 - **[src/README.md](src/README.md)**: Runnable scripts, supporting modules, and design patterns
 - **[src/utils/scheduled_pipeline.py](src/utils/scheduled_pipeline.py)**: Python export and staging cleanup logic used by the scheduled runner
 - **[setup_scripts/README.md](setup_scripts/README.md)**: Server setup, replication, backup, and cron installation
-- **[setup_scripts/table_creation_script/](setup_scripts/table_creation_script/)**: Schema definitions and table designs
+- **[alembic/versions/](alembic/versions/)**: Migration history and canonical schema evolution
+- **[setup_scripts/table_creation_script/](setup_scripts/table_creation_script/)**: Legacy SQL schema references (historical)
 - **[tests/README.md](tests/README.md)**: Test organization, fixtures, and coverage reporting
 - **[.env.template](.env.template)**: Environment variable reference
 

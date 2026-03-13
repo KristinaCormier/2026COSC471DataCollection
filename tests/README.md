@@ -1,6 +1,9 @@
 # Tests
 
-This directory contains unit, integration, and pipeline tests for the data collection and ETL system. All tests use pytest and require a PostgreSQL-compatible test database.
+This directory contains unit, integration, and pipeline tests for the data collection and ETL system.
+
+- Unit tests are fast and do not require a database.
+- Integration and pipeline tests require a PostgreSQL-compatible test database.
 
 ## Test Organization
 
@@ -9,6 +12,22 @@ This directory contains unit, integration, and pipeline tests for the data colle
 - **`tests/pipeline/`**: End-to-end tests for the complete collection and transformation pipeline. Requires a test database and mock API.
 - **`tests/conftest.py`**: Shared pytest fixtures for database connections, project paths, and test utilities.
 - **`tests/data/`**: Static test data and fixtures (small CSV files, mock responses, etc.)
+
+## Execution Tracks
+
+### Unit-Only (Fast Local)
+- Scope: `tests/unit/`
+- Database: Not required
+- Typical use: local development feedback loop
+- Command: `pytest tests/unit/ -v`
+
+### Integration + Pipeline (Database Required)
+- Scope: `tests/integration/`, `tests/pipeline/`
+- Database: Required (`TEST_DATABASE_URL` or PG* variables)
+- Typical use: pre-merge validation
+- Commands:
+    - `pytest tests/integration/ -v`
+    - `pytest tests/pipeline/ -v`
 
 ## Shared Fixtures
 
@@ -35,7 +54,7 @@ All fixtures are defined in [conftest.py](conftest.py) and available globally:
 - Python 3.9+
 - Virtual environment activated: `source .venv/bin/activate`
 - Requirements installed: `pip install -r requirements-dev.txt`
-- Test database configured (separate from production)
+- Test database configured (separate from production) for integration/pipeline tests
 
 ### Environment Variables
 
@@ -56,7 +75,7 @@ Create a `.env` file at the project root (or export variables) with:
 - `WINDOW_MINUTES`: Set to `60` (default)
 - `LOG_DIR`: Set to `./logs` (default)
 
-### Prepare Test Database
+### Prepare Test Database (Integration/Pipeline Only)
 
 ```bash
 # Ensure test database exists and is accessible
@@ -70,9 +89,6 @@ psql -h "${PGHOST:-localhost}" -U "${PGUSER:-cdem}" -c "CREATE DATABASE ${PGDATA
 ### Quick Test
 
 ```bash
-# Run all tests
-pytest
-
 # Run unit tests only (no database needed)
 pytest tests/unit/ -v
 
@@ -81,6 +97,9 @@ pytest tests/integration/ -v
 
 # Run pipeline tests (requires test database and mocked API)
 pytest tests/pipeline/ -v
+
+# Run all tests (unit + integration + pipeline)
+pytest
 ```
 
 ### With Coverage

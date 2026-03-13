@@ -232,7 +232,7 @@ ls -ld ./logs
 
 ## Manual Utilities
 
-### CSV Bulk Load (`load_stg_raw_market_data.sh`)
+### CSV Bulk Load (`src/load_stg_raw_market_data.py`)
 
 **Purpose**: Load historical OHLCV data from CSV files into `stg_raw.market_data`.
 
@@ -246,20 +246,24 @@ ls -ld ./logs
 
 **Usage**:
 ```bash
-bash setup_scripts/load_stg_raw_market_data.sh
+# Preferred (Python ORM loader)
+python src/load_stg_raw_market_data.py --csv-dir /path/to/csv/files
+
+# Compatibility wrapper (delegates to the Python loader)
+bash setup_scripts/load_stg_raw_market_data.sh --csv-dir /path/to/csv/files
 ```
 
 **What It Does**:
 1. Iterates over all `.csv` files in the configured directory
-2. For each file, creates a temporary SQL script that:
-   - Creates a temp table with text columns
-   - Copies CSV data into temp table
-   - Parses and casts columns to the correct types
-   - Inserts into `stg_raw.market_data` with source = `'CSV_bulk_load'`
-3. Deletes the temp table and cleans up
+2. Validates required columns (`date, open, high, low, close, volume`)
+3. Parses/casts rows in Python and upserts to `stg_raw.market_data`
+4. Falls back to INSERT-only batches if a legacy database is missing the upsert key
 
-**Configuration** (edit in script):
-- `CSV_PATH`: Directory containing CSV files (default: `/path/to/Your/File/29-stocks-5-min`)
+**Configuration**:
+- `--csv-dir`: Directory containing CSV files (required unless `CSV_PATH` is set in `.env`)
+- `--pattern`: File glob pattern (default: `*.csv`)
+- `--skip-invalid-rows`: Continue loading valid rows when malformed rows are present
+- `--dry-run`: Parse/validate only, no database writes
 
 **Post-Upload Validation**:
 ```bash
@@ -345,7 +349,7 @@ bash setup_cronjob_scheduled_operations.sh
 crontab -l
 
 # 6. Optionally load historical data
-bash load_stg_raw_market_data.sh
+python ../src/load_stg_raw_market_data.py --csv-dir /path/to/csv/files
 ```
 
 ---
@@ -366,4 +370,4 @@ bash load_stg_raw_market_data.sh
 
 - [README.md](../README.md) — Project overview and quick start
 - [.env.template](../.env.template) — Full environment variable reference
-- [setup_scripts/table_creation_script/](table_creation_script/) — Schema definitions
+- [setup_scripts/table_creation_script/](table_creation_script/) — Legacy SQL schema references (historical)
