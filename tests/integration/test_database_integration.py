@@ -107,11 +107,11 @@ def test_check_table_exists_raises_for_nonexistent_table(test_db_config):
 @pytest.mark.integration
 @pytest.mark.skipif(
     not os.getenv("PGHOST"),
-    reason="Requires valid PGHOST environment variable and existing market schema tables"
+    reason="Requires valid PGHOST environment variable and existing stg_raw schema tables"
 )
 def test_check_table_exists_passes_for_existing_table(test_db_config):
-    # Given: A database connection and an existing table
-    # Note: This assumes market.aapl or similar exists from schema setup
+    # Given: A database connection and an existing table in the test database
+    # Note: This assumes stg_raw.market_data or similar exists from schema setup
     try:
         conn = dbu.db_connect(
             os.getenv("PGHOST", "localhost"),

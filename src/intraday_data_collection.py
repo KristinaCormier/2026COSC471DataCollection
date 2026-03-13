@@ -1,3 +1,30 @@
+"""
+Intraday Stock Data Collector
+
+Purpose:
+    Fetch the latest completed 5-minute OHLCV bars for configured symbols from the FMP API,
+    validate them, and upsert them into the staging layer (stg_raw.market_data).
+
+Intended Use:
+    Run on a schedule (cron) to continuously ingest recent market data during trading hours.
+    Safe to run multiple times; uses ON CONFLICT DO UPDATE to handle duplicates.
+
+Environment Variables:
+    API: FMP_API_KEY, FMP_API_URL, FMP_API_DELAY_SECONDS, SYMBOLS, MARKET_TZ, WINDOW_MINUTES
+    Database: PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD
+    Runtime: LOG_DIR, MARKET_OPEN, MARKET_CLOSE
+
+Usage:
+    python src/intraday_data_collection.py
+
+Output:
+    - Rows inserted/updated in stg_raw.market_data
+    - Error logs in ./logs/ (fetch_data_log.csv, data_error_log.csv, db_insert_errors.csv)
+
+Author: Data Collection Team
+License: MIT
+"""
+
 # On execution, this script should fetch stock data for the most recent
 # completed 5 minute interval in EST.
 # It should insert this data into postgres for each symbol provided

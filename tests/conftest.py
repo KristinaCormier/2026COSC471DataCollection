@@ -1,3 +1,41 @@
+"""
+Pytest Configuration & Shared Fixtures
+
+Purpose:
+    Provide common pytest fixtures for all test modules, including database connections,
+    project paths, mock helpers, and test data loaders.
+
+Session-Scoped Fixtures (initialized once per test session):
+    - project_root: Path to repository root directory
+    - data_dir: Path to tests/data/ fixture directory
+    - db_url: Test database URL from TEST_DATABASE_URL env var or default
+    - db_engine: SQLAlchemy engine (auto-disposed after all tests)
+
+Function-Scoped Fixtures (created fresh per test, rolled back after):
+    - db_connection: Transaction-scoped connection (auto-rollback after test)
+    - db_session: SQLAlchemy ORM session bound to db_connection
+    - seed_rows: Helper to insert test data into tables
+
+Utilities:
+    - FakeResponse: Mock HTTP response for API call testing
+    - FakeCursor: Mock database cursor for legacy tests
+
+Usage:
+    Fixtures are auto-discovered by pytest and available via function arguments:
+
+    def test_my_feature(db_session):
+        # db_session is a fresh ORM session, auto-rolled back after test
+        pass
+
+Environment:
+    - PGPORT, PGHOST, PGDATABASE, PGUSER, PGPASSWORD default to safe test values
+    - TEST_DATABASE_URL can override all connection settings at once
+    - All database operations are wrapped in transactions for test isolation
+
+Author: Data Collection Team
+License: MIT
+"""
+
 from __future__ import annotations
 
 import os

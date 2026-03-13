@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Orchestrates scheduled SQL scripts in src/sql_operations/.
-# Discovers .sql files, runs them alphabetically, logs results to operation_logs.pipeline_logs.
+# Executes a fixed pipeline order and logs results to operation_logs.pipeline_logs.
 # Intended to be called via cron or manually.
 #
 # Usage: python3 src/run_scheduled_operations.py
@@ -12,7 +12,6 @@ from __future__ import annotations
 import os
 import sys
 import logging
-import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -78,6 +77,12 @@ PGPASSWORD = os.getenv("PGPASSWORD", "")
 
 SRC_DIR = Path(__file__).parent
 SQL_SCRIPTS_DIR = SRC_DIR / "sql_operations"
+
+# Deterministic execution plan for scheduled SQL operations.
+PIPELINE_STEPS: tuple[tuple[str, Optional[str]], ...] = (
+    ("export_stg_to_core.sql", None),
+    ("truncate_stg_raw.sql", "export_stg_to_core.sql"),
+)
 
 
 def validate_environment() -> bool:
@@ -188,7 +193,7 @@ def execute_sql_script(
 
 
 def main() -> int:
-    """Execute all scheduled SQL operations in alphabetical order."""
+    """Execute scheduled SQL operations in a fixed, dependency-aware order."""
     global logger
     
     # Configure logging at startup - must be done before any logger calls
@@ -212,12 +217,31 @@ def main() -> int:
         logger.warning(f"SQL scripts directory not found: {SQL_SCRIPTS_DIR}")
         return 1
     
-    # Discover SQL files in alphabetical order
-    sql_files = sorted(SQL_SCRIPTS_DIR.glob("*.sql"))
-    
-    if not sql_files:
+    # Discover available SQL files and validate required pipeline scripts.
+    available_scripts = {script.name: script for script in SQL_SCRIPTS_DIR.glob("*.sql")}
+
+    if not available_scripts:
         logger.warning(f"No .sql files found in {SQL_SCRIPTS_DIR}")
         return 1
+
+    required_script_names = [script_name for script_name, _ in PIPELINE_STEPS]
+    missing_scripts = [
+        script_name for script_name in required_script_names
+        if script_name not in available_scripts
+    ]
+    if missing_scripts:
+        logger.error(
+            "Missing required SQL scripts: %s",
+            ", ".join(missing_scripts),
+        )
+        return 1
+
+    extra_scripts = sorted(set(available_scripts) - set(required_script_names))
+    if extra_scripts:
+        logger.info(
+            "Ignoring unmanaged SQL scripts: %s",
+            ", ".join(extra_scripts),
+        )
     
     # Connect to database
     try:
@@ -227,16 +251,22 @@ def main() -> int:
         logger.error(f"Failed to connect to database: {e}")
         return 1
     
-    # Execute each script
-    results = {}
+    # Execute scripts in fixed order, skipping dependent stages when prerequisites fail.
+    results: dict[str, tuple[bool, Optional[str]]] = {}
+    skipped_scripts: dict[str, str] = {}
     try:
-        for script in sql_files:
-            script_name = script.name
-            #success, error_msg = execute_sql_script(conn, script, script_name)
-            #results[script_name] = (success, error_msg)
-            if script_name == "export_stg_to_core.sql": 
-                success, error_msg = execute_sql_script(conn, script, script_name)
-                results[script_name] = (success, error_msg)
+        for script_name, dependency_script in PIPELINE_STEPS:
+            if dependency_script is not None:
+                dependency_result = results.get(dependency_script)
+                if not dependency_result or not dependency_result[0]:
+                    skip_reason = f"Skipped because dependency {dependency_script} did not succeed"
+                    skipped_scripts[script_name] = skip_reason
+                    logger.warning(f"{script_name} skipped. {skip_reason}.")
+                    continue
+
+            script_path = available_scripts[script_name]
+            success, error_msg = execute_sql_script(conn, script_path, script_name)
+            results[script_name] = (success, error_msg)
     finally:
         conn.close()
     
@@ -244,14 +274,20 @@ def main() -> int:
     logger.info("=" * 70)
     passed = sum(1 for success, _ in results.values() if success)
     failed = len(results) - passed
+    skipped = len(skipped_scripts)
     
-    logger.info(f"Execution Summary: {passed} passed, {failed} failed")
+    logger.info(f"Execution Summary: {passed} passed, {failed} failed, {skipped} skipped")
     
     if failed > 0:
         logger.info("Failed scripts:")
         for script_name, (success, error_msg) in results.items():
             if not success:
                 logger.info(f"  - {script_name}: {error_msg}")
+
+    if skipped_scripts:
+        logger.info("Skipped scripts:")
+        for script_name, reason in skipped_scripts.items():
+            logger.info(f"  - {script_name}: {reason}")
     
     logger.info("=" * 70)
     

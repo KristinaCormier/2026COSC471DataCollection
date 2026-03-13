@@ -1,3 +1,46 @@
+-- ============================================================================
+-- Export & Transform: stg_raw.market_data → core_dbms.market_data_5m
+-- ============================================================================
+--
+-- Purpose:
+--     Move, deduplicate, validate, and transform 5-minute bars from the staging
+--     layer (raw API ingest) to the core warehouse (validated canonical data).
+--
+-- Execution Context:
+--     Called by: src/run_scheduled_operations.py (via cron, default: 2 AM UTC daily)
+--     Executes as: Single transaction (BEGIN; ... COMMIT; or ROLLBACK;)
+--     Dependencies: stg_raw.market_data must exist with rows to process
+--
+-- What It Does:
+--     1. RANK: Deduplicates on (symbol, ts) by keeping the latest ingest only
+--     2. LOG: Records discarded duplicates to operation_logs.dedup_conflicts
+--     3. VALIDATE: Checks OHLCV completeness, price validity, volume sanity
+--     4. LOG: Records quality failures to operation_logs.data_quality_errors
+--     5. UPSERT: Inserts or updates core_dbms.market_data_5m with valid rows
+--
+-- Side Effects:
+--     - Writes to operation_logs.dedup_conflicts (duplicates, if any)
+--     - Writes to operation_logs.data_quality_errors (invalid rows, if any)
+--     - Execution logged by run_scheduled_operations.py to operation_logs.pipeline_logs
+--     - Does NOT delete from stg_raw; call truncate_stg_raw.sql separately
+--
+-- Idempotency:
+--     Safe to run multiple times. Uses ON CONFLICT DO UPDATE, so re-running
+--     will overwrite prior exports with the same (symbol, ts) if staging has changed.
+--
+-- Performance Notes:
+--     - Typical runtime: < 1 second on < 1M rows
+--     - Window functions (ROW_NUMBER) scan staging once
+--     - Indexes on (symbol, ts) recommended for both tables
+--
+-- Rollback:
+--     On error, the entire transaction rolls back. No cleanup needed.
+--     Staging data remains untouched for retry/investigation.
+--
+-- Author: Data Collection Team
+-- License: MIT
+-- ============================================================================
+
 BEGIN;
 
 --------------------------------------------------

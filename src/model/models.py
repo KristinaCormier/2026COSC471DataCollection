@@ -1,3 +1,38 @@
+"""
+SQLAlchemy ORM Models for Data Pipeline
+
+Purpose:
+    Define declarative ORM models for all database tables across the three-layer schema:
+    - stg_raw: Staging layer for raw API ingest
+    - core_dbms: Core warehouse layer for validated, deduplicated data
+    - operation_logs: Audit and error tracking
+
+Tables:
+    Staging Layer (stg_raw):
+        - MarketData: Raw 5-minute bars from API (symbol, ts, OHLCV, raw JSON)
+        - IngestError: Failed API calls, validation errors
+
+    Core Layer (core_dbms):
+        - MarketData5m: Quality-checked, deduplicated 5-minute bars
+
+    Operations Layer (operation_logs):
+        - AuthorityConflict: Source conflicts (for multi-source scenarios)
+        - BackupLog: Backup/restore event history
+        - CastError: Type conversion failures
+        - DeduplicationConflict: Rows discarded as duplicates
+        - DataQualityError: Rows rejected for data quality issues
+        - PipelineLog: Script execution status and results
+
+Design:
+    - All tables use timezone-aware DateTime columns (UTC stored, but TZ aware in Python objects)
+    - Unique constraints are field-specific (e.g., UNIQUE(symbol, ts) on market_data)
+    - Foreign keys are not enforced to keep staging layer flexible
+    - JSONB columns preserve raw API payload for debugging
+
+Author: Data Collection Team
+License: MIT
+"""
+
 from __future__ import annotations
 
 import datetime as dt

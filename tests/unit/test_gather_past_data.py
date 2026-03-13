@@ -1,3 +1,20 @@
+"""
+Unit Tests for gather_past_data Module
+
+Purpose:
+    Test argument parsing, date validation, and window computation for the historical
+    backfill CLI without requiring a database or API connection.
+
+Scope:
+    - CLI argument parsing (--from-date, --to-date, --symbols)
+    - Date validation (no future dates, from-date <= to-date)
+    - Time window computation for day ranges
+    - No external API calls or database operations
+
+Author: Data Collection Team
+License: MIT
+"""
+
 import argparse
 import datetime as dt
 from zoneinfo import ZoneInfo

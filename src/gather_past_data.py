@@ -1,3 +1,36 @@
+"""
+Historical Data Backfill Tool
+
+Purpose:
+    Fetch 5-minute OHLCV bars for a user-specified historical date range from the FMP API,
+    validate them, and upsert them into the staging layer (stg_raw.market_data).
+
+Intended Use:
+    Run on-demand to backfill missing data after outages, recover from gaps, or load historical
+    data ranges. Both dates must be in the past relative to MARKET_TZ.
+
+Environment Variables:
+    API: FMP_API_KEY, FMP_API_URL, FMP_API_DELAY_SECONDS, SYMBOLS (override with --symbols), MARKET_TZ
+    Database: PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD
+    Runtime: LOG_DIR, MARKET_OPEN, MARKET_CLOSE
+
+Usage:
+    python src/gather_past_data.py --from-date 2026-02-01 --to-date 2026-02-07
+    python src/gather_past_data.py --from-date 2026-02-01 --to-date 2026-02-07 --symbols AAPL,MSFT
+
+Arguments:
+    --from-date YYYY-MM-DD: Inclusive start date (required, must be in past)
+    --to-date YYYY-MM-DD: Inclusive end date (required, must be in past and >= from-date)
+    --symbols TICKER,TICKER,...: Override SYMBOLS from .env (optional)
+
+Output:
+    - Rows inserted/updated in stg_raw.market_data
+    - Error logs in ./logs/ (fetch_data_log.csv, data_error_log.csv, db_insert_errors.csv)
+
+Author: Data Collection Team
+License: MIT
+"""
+
 # On execution, this script should fetch stock data for a user-specified
 # historical date range and insert it into postgres for each symbol provided.
 

@@ -491,6 +491,141 @@ class TestMainOrchestration:
             
             assert result == 1
 
+    @pytest.mark.unit
+    @patch.dict('os.environ', {'PGDATABASE': 'testdb', 'PGUSER': 'testuser'})
+    @patch('run_scheduled_operations.execute_sql_script')
+    @patch('run_scheduled_operations.db_connect')
+    @patch('run_scheduled_operations.validate_environment')
+    @patch('run_scheduled_operations.SQL_SCRIPTS_DIR')
+    def test_main_executes_pipeline_in_fixed_order(
+        self,
+        mock_sql_dir,
+        mock_validate,
+        mock_connect,
+        mock_execute,
+        tmp_path,
+        monkeypatch,
+    ):
+        """Given: Required SQL scripts are present in arbitrary discovery order
+        When: main() is called
+        Then: Executes only managed scripts in fixed pipeline order"""
+        log_dir = tmp_path / "logs"
+        log_dir.mkdir()
+        monkeypatch.setattr('run_scheduled_operations.LOG_DIR', log_dir)
+        monkeypatch.setattr('run_scheduled_operations.logger', None)
+
+        mock_validate.return_value = True
+        mock_conn = MagicMock()
+        mock_connect.return_value = mock_conn
+        mock_execute.side_effect = [(True, None), (True, None)]
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmppath = Path(tmpdir)
+            truncate_script = tmppath / "truncate_stg_raw.sql"
+            export_script = tmppath / "export_stg_to_core.sql"
+            extra_script = tmppath / "adhoc_cleanup.sql"
+
+            truncate_script.write_text("TRUNCATE TABLE stg_raw.market_data;")
+            export_script.write_text("SELECT 1;")
+            extra_script.write_text("SELECT 2;")
+
+            mock_sql_dir.exists.return_value = True
+            mock_sql_dir.glob.return_value = [truncate_script, extra_script, export_script]
+
+            result = main()
+
+            assert result == 0
+            assert mock_execute.call_args_list == [
+                call(mock_conn, export_script, "export_stg_to_core.sql"),
+                call(mock_conn, truncate_script, "truncate_stg_raw.sql"),
+            ]
+            mock_conn.close.assert_called_once()
+
+    @pytest.mark.unit
+    @patch.dict('os.environ', {'PGDATABASE': 'testdb', 'PGUSER': 'testuser'})
+    @patch('run_scheduled_operations.execute_sql_script')
+    @patch('run_scheduled_operations.db_connect')
+    @patch('run_scheduled_operations.validate_environment')
+    @patch('run_scheduled_operations.SQL_SCRIPTS_DIR')
+    def test_main_skips_truncate_when_export_fails(
+        self,
+        mock_sql_dir,
+        mock_validate,
+        mock_connect,
+        mock_execute,
+        tmp_path,
+        monkeypatch,
+    ):
+        """Given: export_stg_to_core fails
+        When: main() is called
+        Then: truncate_stg_raw is skipped and exit code is failure"""
+        log_dir = tmp_path / "logs"
+        log_dir.mkdir()
+        monkeypatch.setattr('run_scheduled_operations.LOG_DIR', log_dir)
+        monkeypatch.setattr('run_scheduled_operations.logger', None)
+
+        mock_validate.return_value = True
+        mock_conn = MagicMock()
+        mock_connect.return_value = mock_conn
+        mock_execute.side_effect = [(False, "export failed")]
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmppath = Path(tmpdir)
+            truncate_script = tmppath / "truncate_stg_raw.sql"
+            export_script = tmppath / "export_stg_to_core.sql"
+
+            truncate_script.write_text("TRUNCATE TABLE stg_raw.market_data;")
+            export_script.write_text("SELECT 1;")
+
+            mock_sql_dir.exists.return_value = True
+            mock_sql_dir.glob.return_value = [truncate_script, export_script]
+
+            result = main()
+
+            assert result == 1
+            mock_execute.assert_called_once_with(
+                mock_conn,
+                export_script,
+                "export_stg_to_core.sql",
+            )
+            mock_conn.close.assert_called_once()
+
+    @pytest.mark.unit
+    @patch.dict('os.environ', {'PGDATABASE': 'testdb', 'PGUSER': 'testuser'})
+    @patch('run_scheduled_operations.db_connect')
+    @patch('run_scheduled_operations.validate_environment')
+    @patch('run_scheduled_operations.SQL_SCRIPTS_DIR')
+    def test_main_fails_when_required_pipeline_script_missing(
+        self,
+        mock_sql_dir,
+        mock_validate,
+        mock_connect,
+        tmp_path,
+        monkeypatch,
+    ):
+        """Given: A required pipeline SQL file is missing
+        When: main() is called
+        Then: Fails before opening a database connection"""
+        log_dir = tmp_path / "logs"
+        log_dir.mkdir()
+        monkeypatch.setattr('run_scheduled_operations.LOG_DIR', log_dir)
+        monkeypatch.setattr('run_scheduled_operations.logger', None)
+
+        mock_validate.return_value = True
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmppath = Path(tmpdir)
+            export_script = tmppath / "export_stg_to_core.sql"
+            export_script.write_text("SELECT 1;")
+
+            mock_sql_dir.exists.return_value = True
+            mock_sql_dir.glob.return_value = [export_script]
+
+            result = main()
+
+            assert result == 1
+            mock_connect.assert_not_called()
+
 
 class TestSqlDiscovery:
     """Test SQL file discovery and ordering."""

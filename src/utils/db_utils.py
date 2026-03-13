@@ -20,7 +20,7 @@ def safe_table_name_for_symbol(sym: str) -> str:
         sym: Stock symbol (e.g., 'AAPL', '^TNX')
     
     Returns:
-        Qualified table name (e.g., 'market.aapl')
+        Qualified table name (e.g., 'stg_raw.market_data')
     
     Raises:
         ValueError: If symbol contains no valid characters

@@ -1,3 +1,27 @@
+"""
+Database Connection & Initialization
+
+Purpose:
+    Manage SQLAlchemy engine creation, session factory setup, and schema initialization.
+    Ensures all required schemas (stg_raw, core_dbms, operation_logs) and tables exist
+    before any ORM operations.
+
+Functions:
+    - build_postgres_url(): Construct a PostgreSQL connection string
+    - get_engine(): Create a SQLAlchemy engine with connection pooling
+    - get_session_factory(): Create a session factory for ORM operations
+    - init_db(): Create all schemas and tables if they don't exist
+
+Design:
+    - Schemas are created in init_db() before tables to ensure clean initialization
+    - All ORM models are defined in models.py
+    - The engine is configured with future=True for SQLAlchemy 2.0 compatibility
+    - Sessions are configured with autoflush=False and autocommit=False for explicit control
+
+Author: Data Collection Team
+License: MIT
+"""
+
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
