@@ -19,12 +19,11 @@ FMP API
       └─→ stg_raw.market_data
           │
           ├─→ run_scheduled_operations.py (scheduled)
-          │   │
-          │   └─→ export_stg_to_core.sql
-          │       ├─ Ranks rows by ingest time
-          │       ├─ Deduplicates on (symbol, ts)
-          │       ├─ Validates OHLCV completeness
-          │       └─ Upserts into core_dbms.market_data_5m
+          │   ├─→ Python pipeline steps
+          │   │   ├─ Ranks rows by ingest time
+          │   │   ├─ Deduplicates on (symbol, ts)
+          │   │   ├─ Validates OHLCV completeness
+          │   │   └─ Upserts into core_dbms.market_data_5m
           │
           └─→ operation_logs.*
               ├─ dedup_conflicts
@@ -57,13 +56,28 @@ Required environment variables:
 
 See [.env.template](.env.template) for all options.
 
-### 3. Set Up Database & Cron
+### 3. Initialize Database Schema
 ```bash
-# One-time setup (requires sudo and .env)
+# Recommended for managed environments
+python -m alembic upgrade head
+
+# Convenience initializer for disposable local/test databases
+python -c "from model.orm_db import build_postgres_url, get_engine, init_db; import os; init_db(get_engine(os.getenv('PGHOST', 'localhost'), int(os.getenv('PGPORT', '5432')), os.getenv('PGDATABASE', 'market_data'), os.getenv('PGUSER', 'user'), os.getenv('PGPASSWORD', 'password')))"
+```
+
+### 4. Optional Cron / Server Setup
+```bash
+# Optional operational setup (.env required)
 cd setup_scripts
-sudo bash setup_server.sh              # Creates users, replication, backups
-sudo bash setup_cronjob_daily_collector.sh    # Schedules intraday collection
-sudo bash setup_cronjob_scheduled_operations.sh  # Schedules stg→core export
+
+# Local/user cron install (default mode)
+bash setup_cronjob_daily_collector.sh
+bash setup_cronjob_scheduled_operations.sh
+
+# Optional server-level install (requires sudo)
+sudo bash setup_server.sh
+sudo CRON_INSTALL_MODE=system bash setup_cronjob_daily_collector.sh
+sudo CRON_INSTALL_MODE=system bash setup_cronjob_scheduled_operations.sh
 ```
 
 For detailed setup instructions, see [setup_scripts/README.md](setup_scripts/README.md).
@@ -102,7 +116,7 @@ Three entry points drive the pipeline:
 
 ### `run_scheduled_operations.py` — Transform & Load
 - **Trigger**: Scheduled via cron (default: daily at 2 AM UTC)
-- **Purpose**: Execute SQL scripts in `src/sql_operations/` in alphabetical order to move/transform data from staging to core warehouse
+- **Purpose**: Execute Python pipeline steps to deduplicate staging data, log quality issues, upsert into core, and clean staging after a successful export
 - **Output**: Rows in `core_dbms.market_data_5m` and audit logs in `operation_logs.*`
 - **Usage**: `python src/run_scheduled_operations.py`
 - **Logs**: Execution status written to `operation_logs.pipeline_logs`
@@ -170,12 +184,12 @@ See [setup_scripts/table_creation_script/operation_logs/README.MD](setup_scripts
 | `no matching row in table` | Test database not initialized | Run pytest setup or initialize manually |
 | `UNIQUE constraint violation` | Attempted duplicate insert outside upsert | Check caller is using ORM with `on_conflict_do_update` |
 | `permission denied on sequence` | Database role lacks privileges | Grant sequence privileges to user in PostgreSQL |
-| `Log directory does not exist` | Setup script not run | Execute `sudo bash setup_scripts/setup_cronjob_*.sh` |
+| `Log directory is not writable` | `LOG_DIR` points to a protected location | Set `LOG_DIR` to a writable project-local path such as `./logs` |
 
 ## Documentation Map
 
 - **[src/README.md](src/README.md)**: Runnable scripts, supporting modules, and design patterns
-- **[src/sql_operations/README.md](src/sql_operations/README.md)**: SQL script execution order and side effects
+- **[src/utils/scheduled_pipeline.py](src/utils/scheduled_pipeline.py)**: Python export and staging cleanup logic used by the scheduled runner
 - **[setup_scripts/README.md](setup_scripts/README.md)**: Server setup, replication, backup, and cron installation
 - **[setup_scripts/table_creation_script/](setup_scripts/table_creation_script/)**: Schema definitions and table designs
 - **[tests/README.md](tests/README.md)**: Test organization, fixtures, and coverage reporting
@@ -198,7 +212,7 @@ See [tests/README.md](tests/README.md) for more options and fixture documentatio
 ## Architecture & Design Notes
 
 - **Idempotency**: All three entry points are safe to run multiple times; they upsert rather than insert
-- **Alphabetical SQL execution**: `run_scheduled_operations.py` runs `.sql` files in `src/sql_operations/` in alphabetical order; file naming matters
+- **Dependency-aware pipeline execution**: `run_scheduled_operations.py` runs fixed Python steps in order and skips cleanup when export fails
 - **No external broker**: Execution is simple cron + database; no message queue or event system
 - **Observability**: All execution is logged to `operation_logs.pipeline_logs` and file-based error CSVs in `./logs/`
 
@@ -207,7 +221,7 @@ See [tests/README.md](tests/README.md) for more options and fixture documentatio
 Before submitting a PR:
 1. Run `pytest` locally and ensure all tests pass
 2. Update documentation if you change schema, environment variables, or operational behavior
-3. Add tests for new data validation or SQL transformation logic
+3. Add tests for new data validation or Python pipeline transformation logic
 4. Keep error logging consistent with [src/utils/logging_utils.py](src/utils/logging_utils.py)
 
 See [.github/pull_request_template.md](.github/pull_request_template.md) for the required PR checklist.

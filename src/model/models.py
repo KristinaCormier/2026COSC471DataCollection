@@ -41,11 +41,12 @@ from typing import Any, Dict, Optional
 
 from sqlalchemy import (
     BigInteger,
+    CheckConstraint,
     DateTime,
     Numeric,
     Integer,
     Date,
-    JSON,
+    Index,
     Text,
     UniqueConstraint,
     text,
@@ -62,6 +63,8 @@ class MarketData(Base):
 
     __table_args__ = (
         UniqueConstraint("symbol", "ts", name="unique_symbol_ts_source"),
+        Index("idx_stg_raw_symbol_ts", "symbol", "ts"),
+        Index("idx_stg_raw_ingest_time", "ingest_time"),
         {"schema": "stg_raw"},
     )
 
@@ -163,10 +166,10 @@ class MarketData5m(Base):
         nullable=False,
     )
 
-    open: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 6))
-    high: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 6))
-    low: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 6))
-    close: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 6))
+    open: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
+    high: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
+    low: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
+    close: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
 
     volume: Mapped[int] = mapped_column(BigInteger, nullable=False)
 
@@ -330,9 +333,9 @@ class DedupConflict(Base):
         DateTime(timezone=True)
     )
 
-    existing_row: Mapped[Optional[dict]] = mapped_column(JSON)
+    existing_row: Mapped[Optional[dict]] = mapped_column(JSONB)
 
-    incoming_row: Mapped[Optional[dict]] = mapped_column(JSON)
+    incoming_row: Mapped[Optional[dict]] = mapped_column(JSONB)
 
     resolution: Mapped[Optional[str]] = mapped_column(Text)
 
@@ -372,7 +375,14 @@ class IngestionLog(Base):
 
 class PipelineLog(Base):
     __tablename__ = "pipeline_logs"
-    __table_args__ = {"schema": "operation_logs"}
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('running', 'success', 'failed', 'warning')",
+            name="chk_pipeline_logs_status",
+        ),
+        Index("idx_pipeline_logs_stage_time", "pipeline_stage", text("created_at DESC")),
+        {"schema": "operation_logs"},
+    )
 
     log_id: Mapped[int] = mapped_column(
         BigInteger,
@@ -438,6 +448,30 @@ class UpsertFailure(Base):
         DateTime(timezone=True),
         server_default=text("now()"),
     )
+
+
+class TransformMarketData(Base):
+    __tablename__ = "market_data"
+    __table_args__ = {"schema": "stg_transform"}
+
+    symbol: Mapped[str] = mapped_column(Text, primary_key=True)
+
+    ts: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True),
+        primary_key=True,
+    )
+
+    open: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 6))
+
+    high: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 6))
+
+    low: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 6))
+
+    close: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 6))
+
+    volume: Mapped[Optional[int]] = mapped_column(BigInteger)
+
+    vwap: Mapped[Optional[Decimal]] = mapped_column(Numeric(20, 6))
 
 
 class TransformError(Base):

@@ -137,6 +137,10 @@ sudo crontab -l | grep backup_database
 
 Two separate cron scripts install the data collection and transformation pipelines.
 
+Both scripts support two install modes via `CRON_INSTALL_MODE` in `.env`:
+- `user` (default): installs wrappers in `CRON_WRAPPER_DIR` (default: `.ops/bin`) and writes to the target user's crontab.
+- `system`: installs wrappers in `/usr/local/bin` and writes files into `/etc/cron.d` (requires sudo).
+
 ### Daily Intraday Collector (`setup_cronjob_daily_collector.sh`)
 
 **Purpose**: Schedule `src/intraday_data_collection.py` to run regularly during market hours.
@@ -144,28 +148,37 @@ Two separate cron scripts install the data collection and transformation pipelin
 **Prerequisites**:
 - Python virtual environment installed at `$PROJECT_DIR/.venv`
 - `.env` file with FMP_API_KEY and database credentials
-- Sudo access
+- `crontab` command available for the target user
+- Sudo access only when `CRON_INSTALL_MODE=system`
 
 **Usage**:
 ```bash
-sudo bash setup_scripts/setup_cronjob_daily_collector.sh
+# Default local-first install (user mode)
+bash setup_scripts/setup_cronjob_daily_collector.sh
+
+# Optional system install for shared servers
+sudo CRON_INSTALL_MODE=system bash setup_scripts/setup_cronjob_daily_collector.sh
 ```
 
 **What It Does**:
-1. Creates `logs/` directory (if missing) with proper permissions
-2. Creates wrapper script at `/usr/local/bin/run_stock_collector.sh`
-3. Registers cron job in `/etc/cron.d/stock_collector_daily`
+1. Ensures Python dependencies exist in `.venv`
+2. Ensures `LOG_DIR` exists and is writable by the runtime user
+3. Installs wrapper and cron entry based on `CRON_INSTALL_MODE`
+4. Replaces any prior collector entry tagged `COSC471_STOCK_COLLECTOR`
 
 **Cron Schedule** (from `.env`):
 - `COLLECTION_SCHEDULE`: Default `0 * * * *` (every hour)
 
 **Post-Setup Validation**:
 ```bash
-# Check the wrapper script was created
-cat /usr/local/bin/run_stock_collector.sh
+# Check user-mode cron entry
+crontab -l | grep COSC471_STOCK_COLLECTOR
 
-# Check the cron job was registered
-sudo crontab -l | grep run_stock_collector
+# Check user-mode wrapper
+cat .ops/bin/run_stock_collector.sh
+
+# Check system-mode cron entry (if used)
+sudo cat /etc/cron.d/stock_collector_daily
 
 # Check logs directory permissions
 ls -ld ./logs
@@ -173,37 +186,46 @@ ls -ld ./logs
 
 ### Scheduled Operations (`setup_cronjob_scheduled_operations.sh`)
 
-**Purpose**: Schedule `src/run_scheduled_operations.py` to run SQL transformation scripts after collection.
+**Purpose**: Schedule `src/run_scheduled_operations.py` to run the Python transform/load pipeline after collection.
 
 **Prerequisites**:
 - Python virtual environment installed at `$PROJECT_DIR/.venv`
 - `.env` file with database credentials
-- `operation_logs.pipeline_logs` table created in the database
-- Sudo access
+- Database schema initialized (recommended: `python -m alembic upgrade head`)
+- `crontab` command available for the target user
+- Sudo access only when `CRON_INSTALL_MODE=system`
 
 **Usage**:
 ```bash
-sudo bash setup_scripts/setup_cronjob_scheduled_operations.sh
+# Default local-first install (user mode)
+bash setup_scripts/setup_cronjob_scheduled_operations.sh
+
+# Optional system install for shared servers
+sudo CRON_INSTALL_MODE=system bash setup_scripts/setup_cronjob_scheduled_operations.sh
 ```
 
 **What It Does**:
-1. Creates `logs/` directory (if missing) with proper permissions
-2. Creates wrapper script at `/usr/local/bin/run_scheduled_operations.sh`
-3. Registers cron job in `/etc/cron.d/scheduled_operations`
+1. Ensures Python dependencies exist in `.venv`
+2. Ensures `LOG_DIR` exists and is writable by the runtime user
+3. Installs wrapper and cron entry based on `CRON_INSTALL_MODE`
+4. Replaces any prior scheduled-operations entry tagged `COSC471_SCHEDULED_OPERATIONS`
 
 **Cron Schedule** (from `.env`):
 - `STG_TO_CORE_SCHEDULE`: Default `0 2 * * *` (2 AM UTC daily)
 
 **Post-Setup Validation**:
 ```bash
-# Check the wrapper script was created
-cat /usr/local/bin/run_scheduled_operations.sh
+# Check user-mode cron entry
+crontab -l | grep COSC471_SCHEDULED_OPERATIONS
 
-# Check the cron job was registered
-sudo crontab -l | grep run_scheduled_operations
+# Check user-mode wrapper
+cat .ops/bin/run_scheduled_operations.sh
 
-# Verify operation_logs.pipeline_logs is accessible
-psql -d "$PGDATABASE" -c "SELECT COUNT(*) FROM operation_logs.pipeline_logs;"
+# Check system-mode cron entry (if used)
+sudo cat /etc/cron.d/scheduled_operations
+
+# Check logs directory permissions
+ls -ld ./logs
 ```
 
 ---
@@ -281,6 +303,12 @@ COLLECTION_SCHEDULE="0 * * * *"      # Every hour
 STG_TO_CORE_SCHEDULE="0 2 * * *"     # 2 AM UTC daily
 ```
 
+### Cron Installer Mode
+```bash
+CRON_INSTALL_MODE="user"    # user or system
+CRON_WRAPPER_DIR=".ops/bin" # used in user mode
+```
+
 ### PostgreSQL Connection (inherited from `.env`)
 ```bash
 PGHOST="localhost"
@@ -310,11 +338,11 @@ sleep 60
 psql -c "SELECT pg_is_in_recovery();"  # Standby should return 't'
 
 # 4. Install cron jobs
-sudo bash setup_cronjob_daily_collector.sh
-sudo bash setup_cronjob_scheduled_operations.sh
+bash setup_cronjob_daily_collector.sh
+bash setup_cronjob_scheduled_operations.sh
 
 # 5. Verify cron jobs are registered
-sudo crontab -l
+crontab -l
 
 # 6. Optionally load historical data
 bash load_stg_raw_market_data.sh
@@ -328,7 +356,7 @@ bash load_stg_raw_market_data.sh
 |-------|-------|-----|
 | Replication fails to start | `pg_is_in_recovery()` returns false | Check PRIMARY_IP, REPLICATION_USER credentials, and pg_hba.conf |
 | Backup script cannot write | `ls -ld "$BACKUP_DIR"` | Ensure postgres user owns the backup directory: `sudo chown postgres:postgres $BACKUP_DIR` |
-| Cron job doesn't run | `sudo crontab -l` | Ensure sudo bash was used; check wrapper script at `/usr/local/bin/` exists and is executable |
+| Cron job doesn't run | `crontab -l` or `sudo cat /etc/cron.d/...` | Verify `CRON_INSTALL_MODE`, wrapper path (`.ops/bin` for user mode), and executable permissions |
 | CSV import fails | Check CSV column names and types | Ensure columns are: `date, open, high, low, close, volume` and all numeric values parse as valid decimals |
 | Permission denied on user creation | Check `/etc/sudoers` | Only run `setup_server.sh` as root or with sudo; don't use it in a restricted shell |
 
