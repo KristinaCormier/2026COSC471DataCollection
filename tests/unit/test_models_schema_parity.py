@@ -11,14 +11,15 @@ from model.models import (
 )
 
 
-@pytest.mark.unit
+pytestmark = [pytest.mark.unit, pytest.mark.postgres_only]
+
+
 def test_market_data_includes_staging_indexes():
     index_names = {index.name for index in MarketData.__table__.indexes}
     assert "idx_stg_raw_symbol_ts" in index_names
     assert "idx_stg_raw_ingest_time" in index_names
 
 
-@pytest.mark.unit
 def test_market_data_5m_ohlc_columns_are_not_nullable():
     table = MarketData5m.__table__
     assert table.c.open.nullable is False
@@ -27,7 +28,6 @@ def test_market_data_5m_ohlc_columns_are_not_nullable():
     assert table.c.close.nullable is False
 
 
-@pytest.mark.unit
 def test_pipeline_log_has_status_check_constraint_and_index():
     table = PipelineLog.__table__
 
@@ -54,14 +54,12 @@ def test_pipeline_log_has_status_check_constraint_and_index():
     assert "idx_pipeline_logs_stage_time" in index_names
 
 
-@pytest.mark.unit
 def test_dedup_conflict_rows_use_jsonb_columns():
     table = DedupConflict.__table__
     assert isinstance(table.c.existing_row.type, JSONB)
     assert isinstance(table.c.incoming_row.type, JSONB)
 
 
-@pytest.mark.unit
 def test_transform_market_data_model_matches_composite_primary_key_shape():
     table = TransformMarketData.__table__
     assert table.schema == "stg_transform"

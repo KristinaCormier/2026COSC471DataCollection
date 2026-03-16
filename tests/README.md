@@ -2,12 +2,12 @@
 
 This directory contains unit, integration, and pipeline tests for the data collection and ETL system.
 
-- Unit tests are fast and do not require a database.
+- Most unit tests are fast and do not require a database. A small PostgreSQL schema-parity subset is marked `postgres_only`.
 - Integration and pipeline tests require a PostgreSQL-compatible test database.
 
 ## Test Organization
 
-- **`tests/unit/`**: Tests for data parsing, validation, date arithmetic, and API error handling. No database required.
+- **`tests/unit/`**: Tests for data parsing, validation, date arithmetic, and API error handling. Most are database-free; `postgres_only` tests require PostgreSQL.
 - **`tests/integration/`**: Tests for database operations, ORM models, and staging/core layer interaction. Requires a test database.
 - **`tests/pipeline/`**: End-to-end tests for the complete collection and transformation pipeline. Requires a test database and mock API.
 - **`tests/conftest.py`**: Shared pytest fixtures for database connections, project paths, and test utilities.
@@ -17,9 +17,18 @@ This directory contains unit, integration, and pipeline tests for the data colle
 
 ### Unit-Only (Fast Local)
 - Scope: `tests/unit/`
-- Database: Not required
+- Database: Not required for `not postgres_only` subset
 - Typical use: local development feedback loop
-- Command: `pytest tests/unit/ -v`
+- Command: `pytest tests/unit/ -m "not postgres_only" -v`
+
+### PostgreSQL-Specific Unit + Integration + Pipeline
+- Scope: `tests/unit/` (postgres-only subset), `tests/integration/`, `tests/pipeline/`
+- Database: Required (`TEST_DATABASE_URL` or PG* variables)
+- Typical use: schema/type validation and CI-parity checks
+- Commands:
+    - `pytest tests/unit/ -m "postgres_only" -v`
+    - `pytest tests/integration/ -v`
+    - `pytest tests/pipeline/ -v`
 
 ### Integration + Pipeline (Database Required)
 - Scope: `tests/integration/`, `tests/pipeline/`
@@ -90,7 +99,10 @@ psql -h "${PGHOST:-localhost}" -U "${PGUSER:-cdem}" -c "CREATE DATABASE ${PGDATA
 
 ```bash
 # Run unit tests only (no database needed)
-pytest tests/unit/ -v
+pytest tests/unit/ -m "not postgres_only" -v
+
+# Run PostgreSQL-only unit checks
+pytest tests/unit/ -m "postgres_only" -v
 
 # Run integration tests (requires test database)
 pytest tests/integration/ -v
@@ -132,6 +144,9 @@ pytest tests/unit/test_time_utils.py::test_parse_hhmm_accepts_valid_input -v
 
 # Run with minimal output
 pytest -q
+
+# Exclude PostgreSQL-only tests from a mixed run
+pytest -m "not postgres_only" -v
 ```
 
 ### Load Environment Before Testing

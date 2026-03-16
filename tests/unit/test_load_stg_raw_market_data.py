@@ -50,6 +50,22 @@ def test_parse_csv_timestamp_converts_utc_suffix_z():
     assert parsed.minute == 35
 
 
+def test_parse_csv_timestamp_accepts_date_only_format():
+    market_tz = ZoneInfo("America/New_York")
+    parsed = mod._parse_csv_timestamp("2026-03-12", market_tz)
+
+    assert parsed.tzinfo is not None
+    assert parsed.hour == 0
+    assert parsed.minute == 0
+
+
+def test_parse_decimal_raises_for_non_numeric_values():
+    with pytest.raises(ValueError) as exc_info:
+        mod._parse_decimal("not-a-number", "close")
+
+    assert "not numeric" in str(exc_info.value)
+
+
 def test_build_payload_parses_numbers_and_keeps_raw_payload():
     market_tz = ZoneInfo("America/New_York")
     header_map = {
@@ -110,3 +126,24 @@ def test_read_csv_payloads_can_skip_invalid_rows(tmp_path):
     assert len(payloads) == 1
     assert len(warnings) == 1
     assert "bad-date" in warnings[0]
+
+
+def test_read_csv_payloads_raises_when_required_column_is_missing(tmp_path):
+    csv_file = tmp_path / "MSFT.csv"
+    csv_file.write_text(
+        "date,open,high,low,close\n"
+        "2026-03-12 09:35:00,100,101,99,100.5\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError) as exc_info:
+        mod._read_csv_payloads(
+            csv_path=csv_file,
+            source="CSV_bulk_load",
+            asset_type="stock",
+            market_tz=ZoneInfo("America/New_York"),
+            skip_invalid_rows=False,
+        )
+
+    assert "missing required CSV columns" in str(exc_info.value)
+    assert "volume" in str(exc_info.value)

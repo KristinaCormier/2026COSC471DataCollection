@@ -7,11 +7,13 @@ Scripts for provisioning the COSC471 data collection environment. This guide cov
 
 All scripts require a `.env` file at the project root with the necessary environment variables. See [.env.template](../.env.template) for a reference.
 
+For local developer onboarding, prefer the root [README quick start](../README.md). This directory mainly documents operational/server workflows.
+
 ---
 
 ## One-Time Server Setup (`setup_server.sh`)
 
-**Purpose**: Configure the server with privileged users, set up physical streaming replication, and enable automated backups.
+**Purpose**: Configure production servers with privileged users, set up physical streaming replication, and enable automated backups.
 
 **Prerequisites**:
 - Root or sudo access
@@ -36,6 +38,8 @@ All scripts require a `.env` file at the project root with the necessary environ
 cd setup_scripts
 sudo bash setup_server.sh
 ```
+
+Do not use this path for local-first development bootstrap.
 
 **What It Does**:
 1. Creates sudo-capable users from `LIST_OF_SUDO_USERS` array
@@ -246,11 +250,8 @@ ls -ld ./logs
 
 **Usage**:
 ```bash
-# Preferred (Python ORM loader)
+# Python ORM loader (canonical entrypoint)
 python src/load_stg_raw_market_data.py --csv-dir /path/to/csv/files
-
-# Compatibility wrapper (delegates to the Python loader)
-bash setup_scripts/load_stg_raw_market_data.sh --csv-dir /path/to/csv/files
 ```
 
 **What It Does**:
@@ -370,4 +371,4 @@ python ../src/load_stg_raw_market_data.py --csv-dir /path/to/csv/files
 
 - [README.md](../README.md) — Project overview and quick start
 - [.env.template](../.env.template) — Full environment variable reference
-- [setup_scripts/table_creation_script/](table_creation_script/) — Legacy SQL schema references (historical)
+- [alembic/versions/](../alembic/versions/) — Canonical migration history

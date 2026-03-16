@@ -13,6 +13,9 @@ from utils import db_utils as dbu
 from utils import time_utils as tu
 
 
+pytestmark = [pytest.mark.integration, pytest.mark.postgres_only]
+
+
 # Setup
 
 @pytest.fixture
@@ -32,7 +35,6 @@ def test_db_config(monkeypatch):
 #   P → Q: If DB credentials are valid, then connection should succeed
 #   ¬Q: Connection fails (exception raised)
 #   ∴ ¬P: Therefore, credentials are NOT valid (or DB is unreachable)
-@pytest.mark.integration
 def test_db_connect_with_invalid_credentials_fails(monkeypatch):
     # Given: Invalid database credentials
     # When/Then: Attempting to connect should raise an exception (¬Q observed, proving ¬P)
@@ -42,7 +44,6 @@ def test_db_connect_with_invalid_credentials_fails(monkeypatch):
 
 
 # Test 2: db_connect() returns connection object with valid credentials
-@pytest.mark.integration
 @pytest.mark.skipif(
     not os.getenv("PGHOST"),
     reason="Requires valid PGHOST environment variable"
@@ -76,7 +77,6 @@ def test_db_connect_succeeds_with_valid_credentials(test_db_config):
 #   P → Q: If table exists in database, then check should pass without exception
 #   ¬Q: Check raises RuntimeError
 #   ∴ ¬P: Therefore, table does NOT exist (validation working)
-@pytest.mark.integration
 @pytest.mark.skipif(
     not os.getenv("PGHOST"),
     reason="Requires valid PGHOST environment variable"
@@ -104,7 +104,6 @@ def test_check_table_exists_raises_for_nonexistent_table(test_db_config):
 
 
 # Test 4: check_table_exists() passes when table exists
-@pytest.mark.integration
 @pytest.mark.skipif(
     not os.getenv("PGHOST"),
     reason="Requires valid PGHOST environment variable and existing stg_raw schema tables"

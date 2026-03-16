@@ -76,6 +76,8 @@ python src/run_scheduled_operations.py
 ```
 
 ### 5. Optional Cron / Server Setup
+Use the local bootstrap flow above for developer onboarding. Server provisioning scripts are production-only and require privileged access.
+
 ```bash
 # Optional operational setup (.env required)
 cd setup_scripts
@@ -85,7 +87,7 @@ bash setup_cronjob_daily_collector.sh
 bash setup_cronjob_scheduled_operations.sh
 
 # Optional server-level install (requires sudo)
-sudo bash setup_server.sh
+sudo bash setup_server.sh  # production-only path
 sudo CRON_INSTALL_MODE=system bash setup_cronjob_daily_collector.sh
 sudo CRON_INSTALL_MODE=system bash setup_cronjob_scheduled_operations.sh
 ```
@@ -202,7 +204,6 @@ See `src/model/models.py` and `alembic/versions/20260312_0001_baseline_schema.py
 - **[src/utils/scheduled_pipeline.py](src/utils/scheduled_pipeline.py)**: Python export and staging cleanup logic used by the scheduled runner
 - **[setup_scripts/README.md](setup_scripts/README.md)**: Server setup, replication, backup, and cron installation
 - **[alembic/versions/](alembic/versions/)**: Migration history and canonical schema evolution
-- **[setup_scripts/table_creation_script/](setup_scripts/table_creation_script/)**: Legacy SQL schema references (historical)
 - **[tests/README.md](tests/README.md)**: Test organization, fixtures, and coverage reporting
 - **[.env.template](.env.template)**: Environment variable reference
 
