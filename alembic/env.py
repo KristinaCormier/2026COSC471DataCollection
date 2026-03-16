@@ -16,7 +16,7 @@ if str(SRC_PATH) not in sys.path:
 
 load_dotenv(PROJECT_ROOT / ".env")
 
-from model.models import Base  # noqa: E402
+from src.model.models import Base  # noqa: E402
 from model.orm_db import build_postgres_url  # noqa: E402
 
 config = context.config

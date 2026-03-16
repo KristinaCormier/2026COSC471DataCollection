@@ -36,10 +36,10 @@ FMP API
 
 ### 1. Install Dependencies
 ```bash
-pip install -r requirements.txt
-python -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements-dev.txt
+pip install -r requirements.txt
 ```
 
 ### 2. Configure Environment
@@ -56,53 +56,45 @@ Required environment variables:
 
 See [.env.template](.env.template) for all options.
 
-### 3. Initialize Database Schema
-```bash
-# Recommended for managed environments
-python -m alembic upgrade head
-
-# Convenience initializer for disposable local/test databases
-python -c "from model.orm_db import build_postgres_url, get_engine, init_db; import os; init_db(get_engine(os.getenv('PGHOST', 'localhost'), int(os.getenv('PGPORT', '5432')), os.getenv('PGDATABASE', 'market_data'), os.getenv('PGUSER', 'user'), os.getenv('PGPASSWORD', 'password')))"
-```
-
-### 4. Local Bootstrap (Fresh VM)
-```bash
-# Fast local validation path (no sudo/cron required)
-source .venv/bin/activate
-python -m alembic upgrade head
-pytest tests/unit/ -v
-python src/intraday_data_collection.py
-python src/run_scheduled_operations.py
-```
-
-### 5. Optional Cron / Server Setup
-Use the local bootstrap flow above for developer onboarding. Server provisioning scripts are production-only and require privileged access.
+### 3. Setup Server 
 
 ```bash
-# Optional operational setup (.env required)
-cd setup_scripts
-
-# Local/user cron install (default mode)
-bash setup_cronjob_daily_collector.sh
-bash setup_cronjob_scheduled_operations.sh
-
-# Optional server-level install (requires sudo)
-sudo bash setup_server.sh  # production-only path
-sudo CRON_INSTALL_MODE=system bash setup_cronjob_daily_collector.sh
-sudo CRON_INSTALL_MODE=system bash setup_cronjob_scheduled_operations.sh
+cd setup_scripts/server_setup
+sudo bash setup_server.sh 
 ```
 
 For detailed setup instructions, see [setup_scripts/README.md](setup_scripts/README.md).
+and [One-Time Server Setup (`setup_server.sh`)](setup_scripts/server_setup/setup_server.sh)
+
+### 4. Initialize Database Schema
+```bash
+# Navigate back to the project root
+cd ../..
+python -m alembic upgrade head
+
+# Convenience initializer for disposable local/test databases
+python -c "from dotenv import load_dotenv; from src.model.orm_db import build_postgres_url, get_engine, init_db; import os; load_dotenv(); init_db(get_engine(os.getenv('PGHOST', 'localhost'), int(os.getenv('PGPORT', '5432')), os.getenv('PGDATABASE', 'market_data'), os.getenv('PGUSER', 'user'), os.getenv('PGPASSWORD', 'password')))"
+```
+
+### 5.  Cron Setup
+Server cron jobs require privileged access.
+
+```bash
+# Local/user cron install (default mode)
+sudo bash setup_scripts/setup_cronjob_daily_collector.sh
+sudo bash setup_scripts/setup_cronjob_scheduled_operations.sh
+```
 
 ### 6. Manual Testing
 ```bash
+pytest tests/unit/ -v
 # Collect the latest completed interval
 python src/intraday_data_collection.py
 
 # Backfill a past date range
 python src/gather_past_data.py --from-date 2026-02-01 --to-date 2026-02-07
 
-# Transform and load to core warehouse
+# Transform and load to the core schema
 python src/run_scheduled_operations.py
 ```
 

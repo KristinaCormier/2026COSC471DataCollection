@@ -22,20 +22,21 @@ For local developer onboarding, prefer the root [README quick start](../README.m
 - **Required Environment Variables**
   - `LIST_OF_SUDO_USERS`: Array of usernames (e.g., `("etl" "admin")`)
   - `PRIMARY_IP`: IP address of primary server
-  - `PRIMARY_USER`: SSH user on primary (usually `postgres`)
+  - `PRIMARY_USER`: SSH user on primary (usually `cosc-admin`)
   - `PG_CONF`: Path to primary's `postgresql.conf`
   - `PG_HBA`: Path to primary's `pg_hba.conf`
-  - `REPLICATION_USER`: Replication role credentials
+  - `REPLICATION_USER`: Replication role credentials (for db migrations)
   - `REPLICATION_PASSWORD`: Replication role credentials
   - `SLOT_NAME`: Replication slot name (e.g., `replica_slot_1`)
   - `DATA_DIR`: Standby PostgreSQL data directory
-  - `BACKUP_DIR`: Root directory for backups (e.g., `/var/backups/postgres`)
+  - `BACKUP_DIR`: Root directory for backups (e.g., `/var/lib/pgsql/16/backups`)
+  - `PGDATABASE`
   - `DB_USER`
   - `DB_PASSWORD`
 
 **Usage**:
 ```bash
-cd setup_scripts
+cd setup_scripts/server_setup
 sudo bash setup_server.sh
 ```
 
@@ -236,7 +237,7 @@ ls -ld ./logs
 
 ## Manual Utilities
 
-### CSV Bulk Load (`src/load_stg_raw_market_data.py`)
+### CSV Bulk Load (`src/historical_csv_data_load.py`)
 
 **Purpose**: Load historical OHLCV data from CSV files into `stg_raw.market_data`.
 
@@ -251,7 +252,7 @@ ls -ld ./logs
 **Usage**:
 ```bash
 # Python ORM loader (canonical entrypoint)
-python src/load_stg_raw_market_data.py --csv-dir /path/to/csv/files
+python src/historical_csv_data_load.py --csv-dir /path/to/csv/files
 ```
 
 **What It Does**:
@@ -350,7 +351,7 @@ bash setup_cronjob_scheduled_operations.sh
 crontab -l
 
 # 6. Optionally load historical data
-python ../src/load_stg_raw_market_data.py --csv-dir /path/to/csv/files
+python ../src/historical_csv_data_load.py --csv-dir /path/to/csv/files
 ```
 
 ---

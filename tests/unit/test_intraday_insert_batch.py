@@ -3,7 +3,7 @@ from unittest.mock import MagicMock
 from zoneinfo import ZoneInfo
 
 import intraday_data_collection as collector
-from model.models import MarketData
+from src.model.models import MarketData
 
 
 def test_insert_batch_inserts_rows():

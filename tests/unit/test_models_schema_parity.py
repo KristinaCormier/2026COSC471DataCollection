@@ -2,7 +2,7 @@ import pytest
 from sqlalchemy import CheckConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 
-from model.models import (
+from src.model.models import (
     DedupConflict,
     MarketData,
     MarketData5m,

@@ -8,7 +8,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
-import load_stg_raw_market_data as mod
+import historical_csv_data_load as mod
 
 
 def test_normalize_headers_accepts_any_order_and_case():

@@ -10,7 +10,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
 import run_scheduled_operations as mod
-from model.models import MarketData
+from src.model.models import MarketData
 from utils.scheduled_pipeline import (
     PipelineSummary,
     build_export_payloads,

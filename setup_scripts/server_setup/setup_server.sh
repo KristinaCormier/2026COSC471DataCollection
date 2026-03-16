@@ -72,13 +72,13 @@
 set -e
 
 # This script sets up a backup system
-ENV_FILE="../.env"
+ENV_FILE="../../.env"
 if [ -f "$ENV_FILE" ]; then
     set -a
     . "$ENV_FILE"
     set +a
 else
-    echo "Error: $ENV_FILE not found. Please create the .env file with the necessary variables."
+    echo "Error: $ENV_FILE not found. Please create the .env file with the necessary variables. server_setup.sh cannot continue without it."
     exit 1
 fi
 
@@ -110,17 +110,20 @@ for USER in "${LIST_OF_SUDO_USERS[@]}"; do
 done
 
 #=============================================================================
-# 2. DB Migration Setup
+# 2. DB Initialization Setup
 #=============================================================================
-# Run DB migration script
-echo "Starting database migration setup..."
+# Run DB initialization script
+echo "Starting database initialization setup..."
 
-bash ../database_setup/db_migration.sh
+sudo -u postgres createdb $PGDATABASE
+echo "Database $PGDATABASE created."
 #=============================================================================
 # 3. Database Backup Setup
 #=============================================================================
 # Setup automated backups for the database
+echo "Starting backup setup..."
 bash ../database_setup/backup_setup.sh
+echo "Backup setup complete."
 #=============================================================================
 echo "Server setup complete."
 # The server is now configured with necessary users, database replication, and backup systems.

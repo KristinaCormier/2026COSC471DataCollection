@@ -36,6 +36,7 @@ License: MIT
 from __future__ import annotations
 
 import datetime as dt
+import sys
 from decimal import Decimal
 from typing import Any, Dict, Optional
 
@@ -53,6 +54,13 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+# Keep a single module object regardless of whether callers import
+# `model.models` (runtime path) or `src.model.models` (package path).
+if __name__ == "model.models":
+    sys.modules.setdefault("src.model.models", sys.modules[__name__])
+elif __name__ == "src.model.models":
+    sys.modules.setdefault("model.models", sys.modules[__name__])
 
 class Base(DeclarativeBase):
     pass

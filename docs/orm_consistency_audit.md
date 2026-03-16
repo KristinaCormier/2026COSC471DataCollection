@@ -12,7 +12,7 @@ This audit tracks remaining inconsistencies with the project goal of SQLAlchemy 
 - Alembic baseline migration path added (`alembic/`, `alembic/versions/20260312_0001_baseline_schema.py`).
 - Cron installers now support default user-mode setup with project-local wrappers and no hard requirement on `/etc/cron.d` or `/usr/local/bin`.
 - `.env.template` converted back to valid env syntax and updated for cron mode configuration.
-- Legacy CSV shell loader replaced by Python ORM loader (`src/load_stg_raw_market_data.py`).
+- Legacy CSV shell loader replaced by Python ORM loader (`src/historical_csv_data_load.py`).
 - README now includes a local bootstrap sequence for fresh-environment setup without cron/root dependencies.
 - `tests/README.md` now documents separate unit-only and integration/pipeline execution tracks.
 - Deprecated shell loader wrapper removed (`setup_scripts/load_stg_raw_market_data.sh`).

@@ -83,7 +83,7 @@ set -e
 # It creates a backup directory, sets permissions, and schedules a cron job for regular backups.
 
 # Define variables from .env file: source the .env file to get the necessary variables
-ENV_FILE="../.env"
+ENV_FILE="../../.env"
 if [ -f "$ENV_FILE" ]; then
     set -a
     . "$ENV_FILE"

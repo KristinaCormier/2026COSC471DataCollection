@@ -4,7 +4,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 import intraday_data_collection as collector
-from model.models import MarketData
+from src.model.models import MarketData
 from utils import time_utils as tu
 
 
