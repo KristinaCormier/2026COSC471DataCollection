@@ -115,8 +115,8 @@ done
 # Run DB initialization script
 echo "Starting database initialization setup..."
 
-sudo -u postgres createdb $PGDATABASE
-echo "Database $PGDATABASE created."
+sudo -u postgres createdb $DB_NAME
+echo "Database $DB_NAME created."
 #=============================================================================
 # 3. Database Backup Setup
 #=============================================================================

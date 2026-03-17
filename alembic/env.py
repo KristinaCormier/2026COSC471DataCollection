@@ -33,11 +33,11 @@ def get_database_url() -> str:
         return database_url
 
     return build_postgres_url(
-        host=os.getenv("PGHOST", "localhost"),
-        port=int(os.getenv("PGPORT", "5432")),
-        database=os.getenv("PGDATABASE", "market_data"),
-        user=os.getenv("PGUSER", "user"),
-        password=os.getenv("PGPASSWORD", "password"),
+        host=os.getenv("DB_HOST", "localhost"),
+        port=int(os.getenv("DB_PORT", "5432")),
+        database=os.getenv("DB_NAME", "market_data"),
+        user=os.getenv("DB_USER", "user"),
+        password=os.getenv("DB_PASSWORD", "password"),
     )
 
 

@@ -5,7 +5,7 @@
 #
 # Usage: python3 src/run_scheduled_operations.py
 #
-# Requires DATABASE_URL or PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD env vars.
+# Requires DATABASE_URL or DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD env vars.
 
 from __future__ import annotations
 
@@ -86,20 +86,20 @@ PIPELINE_STEPS: tuple[tuple[str, Optional[str], PipelineOperation], ...] = (
 
 
 def validate_environment() -> bool:
-    """Check that DATABASE_URL is set or the required PG* vars are available."""
+    """Check that DATABASE_URL is set or the required DB* vars are available."""
     if os.getenv("DATABASE_URL"):
         return True
 
-    pgdatabase = os.getenv("PGDATABASE")
-    pguser = os.getenv("PGUSER")
+    db_name = os.getenv("DB_NAME")
+    db_user = os.getenv("DB_USER")
 
-    if not pgdatabase:
+    if not db_name:
         if logger:
-            logger.error("PGDATABASE environment variable is not set")
+            logger.error("DB_NAME environment variable is not set")
         return False
-    if not pguser:
+    if not db_user:
         if logger:
-            logger.error("PGUSER environment variable is not set")
+            logger.error("DB_USER environment variable is not set")
         return False
     return True
 
@@ -111,11 +111,11 @@ def build_runtime_engine():
         return create_engine(database_url, future=True, pool_pre_ping=True)
 
     return get_engine(
-        os.getenv("PGHOST", "localhost"),
-        int(os.getenv("PGPORT", "5432")),
-        os.getenv("PGDATABASE", ""),
-        os.getenv("PGUSER", ""),
-        os.getenv("PGPASSWORD", ""),
+        os.getenv("DB_HOST", "localhost"),
+        int(os.getenv("DB_PORT", "5432")),
+        os.getenv("DB_NAME", ""),
+        os.getenv("DB_USER", ""),
+        os.getenv("DB_PASSWORD", ""),
     )
 
 
@@ -236,9 +236,9 @@ def main() -> int:
         else:
             logger.info(
                 "Connected to %s on %s:%s",
-                os.getenv("PGDATABASE"),
-                os.getenv("PGHOST", "localhost"),
-                os.getenv("PGPORT", "5432"),
+                os.getenv("DB_NAME"),
+                os.getenv("DB_HOST", "localhost"),
+                os.getenv("DB_PORT", "5432"),
             )
     except Exception as e:
         logger.error(f"Failed to connect to database: {e}")

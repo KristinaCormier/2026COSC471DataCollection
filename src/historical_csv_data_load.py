@@ -81,11 +81,11 @@ def _build_runtime_engine():
         return create_engine(database_url, future=True, pool_pre_ping=True)
 
     return get_engine(
-        os.getenv("PGHOST", "localhost"),
-        int(os.getenv("PGPORT", "5432")),
-        os.getenv("PGDATABASE", ""),
-        os.getenv("PGUSER", ""),
-        os.getenv("PGPASSWORD", ""),
+        os.getenv("DB_HOST", "localhost"),
+        int(os.getenv("DB_PORT", "5432")),
+        os.getenv("DB_NAME", ""),
+        os.getenv("DB_USER", ""),
+        os.getenv("DB_PASSWORD", ""),
     )
 
 

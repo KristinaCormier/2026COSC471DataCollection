@@ -21,11 +21,11 @@ pytestmark = [pytest.mark.integration, pytest.mark.postgres_only]
 @pytest.fixture
 def test_db_config(monkeypatch):
     """Configure test database credentials via environment variables."""
-    monkeypatch.setenv("PGHOST", os.getenv("PGHOST", "localhost"))
-    monkeypatch.setenv("PGPORT", os.getenv("PGPORT", "5432"))
-    monkeypatch.setenv("PGDATABASE", os.getenv("PGDATABASE", "test_db"))
-    monkeypatch.setenv("PGUSER", os.getenv("PGUSER", "postgres"))
-    monkeypatch.setenv("PGPASSWORD", os.getenv("PGPASSWORD", ""))
+    monkeypatch.setenv("DB_HOST", os.getenv("DB_HOST", "localhost"))
+    monkeypatch.setenv("DB_PORT", os.getenv("DB_PORT", "5432"))
+    monkeypatch.setenv("DB_NAME", os.getenv("DB_NAME", "test_db"))
+    monkeypatch.setenv("DB_USER", os.getenv("DB_USER", "postgres"))
+    monkeypatch.setenv("DB_PASSWORD", os.getenv("DB_PASSWORD", ""))
 
 
 # Execute
@@ -45,8 +45,8 @@ def test_db_connect_with_invalid_credentials_fails(monkeypatch):
 
 # Test 2: db_connect() returns connection object with valid credentials
 @pytest.mark.skipif(
-    not os.getenv("PGHOST"),
-    reason="Requires valid PGHOST environment variable"
+    not os.getenv("DB_HOST"),
+    reason="Requires valid DB_HOST environment variable"
 )
 def test_db_connect_succeeds_with_valid_credentials(test_db_config):
     # Given: Valid database credentials (from test_db_config fixture)
@@ -54,11 +54,11 @@ def test_db_connect_succeeds_with_valid_credentials(test_db_config):
     # When: Establishing connection
     try:
         conn = dbu.db_connect(
-            os.getenv("PGHOST", "localhost"),
-            int(os.getenv("PGPORT", "5432")),
-            os.getenv("PGDATABASE", "test_db"),
-            os.getenv("PGUSER", "postgres"),
-            os.getenv("PGPASSWORD", ""),
+            os.getenv("DB_HOST", "localhost"),
+            int(os.getenv("DB_PORT", "5432")),
+            os.getenv("DB_NAME", "test_db"),
+            os.getenv("DB_USER", "postgres"),
+            os.getenv("DB_PASSWORD", ""),
         )
         
         # Then: Connection should be established successfully
@@ -78,18 +78,18 @@ def test_db_connect_succeeds_with_valid_credentials(test_db_config):
 #   ¬Q: Check raises RuntimeError
 #   ∴ ¬P: Therefore, table does NOT exist (validation working)
 @pytest.mark.skipif(
-    not os.getenv("PGHOST"),
-    reason="Requires valid PGHOST environment variable"
+    not os.getenv("DB_HOST"),
+    reason="Requires valid DB_HOST environment variable"
 )
 def test_check_table_exists_raises_for_nonexistent_table(test_db_config):
     # Given: A database connection and a non-existent table name
     try:
         conn = dbu.db_connect(
-            os.getenv("PGHOST", "localhost"),
-            int(os.getenv("PGPORT", "5432")),
-            os.getenv("PGDATABASE", "test_db"),
-            os.getenv("PGUSER", "postgres"),
-            os.getenv("PGPASSWORD", ""),
+            os.getenv("DB_HOST", "localhost"),
+            int(os.getenv("DB_PORT", "5432")),
+            os.getenv("DB_NAME", "test_db"),
+            os.getenv("DB_USER", "postgres"),
+            os.getenv("DB_PASSWORD", ""),
         )
     except Exception as e:
         pytest.skip(f"Database not available: {e}")
@@ -105,19 +105,19 @@ def test_check_table_exists_raises_for_nonexistent_table(test_db_config):
 
 # Test 4: check_table_exists() passes when table exists
 @pytest.mark.skipif(
-    not os.getenv("PGHOST"),
-    reason="Requires valid PGHOST environment variable and existing stg_raw schema tables"
+    not os.getenv("DB_HOST"),
+    reason="Requires valid DB_HOST environment variable and existing stg_raw schema tables"
 )
 def test_check_table_exists_passes_for_existing_table(test_db_config):
     # Given: A database connection and an existing table in the test database
     # Note: This assumes stg_raw.market_data or similar exists from schema setup
     try:
         conn = dbu.db_connect(
-            os.getenv("PGHOST", "localhost"),
-            int(os.getenv("PGPORT", "5432")),
-            os.getenv("PGDATABASE", "test_db"),
-            os.getenv("PGUSER", "postgres"),
-            os.getenv("PGPASSWORD", ""),
+            os.getenv("DB_HOST", "localhost"),
+            int(os.getenv("DB_PORT", "5432")),
+            os.getenv("DB_NAME", "test_db"),
+            os.getenv("DB_USER", "postgres"),
+            os.getenv("DB_PASSWORD", ""),
         )
     except Exception as e:
         pytest.skip(f"Database not available: {e}")

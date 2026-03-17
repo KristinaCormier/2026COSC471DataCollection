@@ -19,11 +19,11 @@ def mock_env_complete(monkeypatch):
     monkeypatch.setenv("SYMBOLS", "AAPL,MSFT")
     monkeypatch.setenv("MARKET_TZ", "America/New_York")
     monkeypatch.setenv("WINDOW_MINUTES", "5")
-    monkeypatch.setenv("PGHOST", "localhost")
-    monkeypatch.setenv("PGPORT", "5432")
-    monkeypatch.setenv("PGDATABASE", "test_db")
-    monkeypatch.setenv("PGUSER", "test_user")
-    monkeypatch.setenv("PGPASSWORD", "test_pass")
+    monkeypatch.setenv("DB_HOST", "localhost")
+    monkeypatch.setenv("DB_PORT", "5432")
+    monkeypatch.setenv("DB_NAME", "test_db")
+    monkeypatch.setenv("DB_USER", "test_user")
+    monkeypatch.setenv("DB_PASSWORD", "test_pass")
 
 
 @pytest.fixture
@@ -86,7 +86,7 @@ class FakeSession:
 def test_main_exits_when_api_key_missing(mock_market_hours_time, monkeypatch, capsys, mock_error_log_dir):
     monkeypatch.setenv("FMP_API_KEY", "")
     monkeypatch.setenv("SYMBOLS", "AAPL")
-    monkeypatch.setenv("PGPORT", "5432")
+    monkeypatch.setenv("DB_PORT", "5432")
 
     with pytest.raises(SystemExit) as exc_info:
         collector.main()
@@ -110,7 +110,7 @@ def test_main_exits_when_db_connection_fails(mock_market_hours_time, mock_env_co
     assert exc_info.value.code == 2
 
     captured = capsys.readouterr()
-    assert "cannot connect to Postgres" in captured.err
+    assert "cannot connect to database" in captured.err
 
 
 @pytest.mark.pipeline
@@ -161,11 +161,11 @@ def test_main_loads_env_vars_at_runtime(mock_market_hours_time, monkeypatch, cap
     monkeypatch.setenv("SYMBOLS", "GOOGL")
     monkeypatch.setenv("MARKET_TZ", "America/Chicago")
     monkeypatch.setenv("WINDOW_MINUTES", "30")
-    monkeypatch.setenv("PGHOST", "testhost")
-    monkeypatch.setenv("PGPORT", "5433")
-    monkeypatch.setenv("PGDATABASE", "runtime_db")
-    monkeypatch.setenv("PGUSER", "runtime_user")
-    monkeypatch.setenv("PGPASSWORD", "runtime_pass")
+    monkeypatch.setenv("DB_HOST", "testhost")
+    monkeypatch.setenv("DB_PORT", "5433")
+    monkeypatch.setenv("DB_NAME", "runtime_db")
+    monkeypatch.setenv("DB_USER", "runtime_user")
+    monkeypatch.setenv("DB_PASSWORD", "runtime_pass")
 
     fake_session = FakeSession()
 

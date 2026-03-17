@@ -75,8 +75,8 @@ def make_market_row(**overrides):
 
 
 @pytest.mark.unit
-@patch.dict("os.environ", {"PGDATABASE": "testdb", "PGUSER": "testuser"}, clear=True)
-def test_validate_environment_accepts_pg_vars():
+@patch.dict("os.environ", {"DB_NAME": "testdb", "DB_USER": "testuser"}, clear=True)
+def test_validate_environment_accepts_db_vars():
     assert mod.validate_environment() is True
 
 
@@ -229,7 +229,7 @@ def test_main_returns_failure_when_environment_validation_fails(tmp_path, monkey
 
 
 @pytest.mark.unit
-@patch.dict("os.environ", {"PGDATABASE": "testdb", "PGUSER": "testuser"}, clear=True)
+@patch.dict("os.environ", {"DB_NAME": "testdb", "DB_USER": "testuser"}, clear=True)
 def test_main_executes_pipeline_in_order_and_skips_failed_dependency(tmp_path, monkeypatch):
     monkeypatch.setattr(mod, "LOG_DIR", tmp_path / "logs")
     monkeypatch.setattr(mod, "logger", None)
