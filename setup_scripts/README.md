@@ -7,11 +7,13 @@ Scripts for provisioning the COSC471 data collection environment. This guide cov
 
 All scripts require a `.env` file at the project root with the necessary environment variables. See [.env.template](../.env.template) for a reference.
 
+For local developer onboarding, prefer the root [README quick start](../README.md). This directory mainly documents operational/server workflows.
+
 ---
 
 ## One-Time Server Setup (`setup_server.sh`)
 
-**Purpose**: Configure the server with privileged users, set up physical streaming replication, and enable automated backups.
+**Purpose**: Configure production servers with privileged users, set up physical streaming replication, and enable automated backups.
 
 **Prerequisites**:
 - Root or sudo access
@@ -20,22 +22,25 @@ All scripts require a `.env` file at the project root with the necessary environ
 - **Required Environment Variables**
   - `LIST_OF_SUDO_USERS`: Array of usernames (e.g., `("etl" "admin")`)
   - `PRIMARY_IP`: IP address of primary server
-  - `PRIMARY_USER`: SSH user on primary (usually `postgres`)
+  - `PRIMARY_USER`: SSH user on primary (usually `cosc-admin`)
   - `PG_CONF`: Path to primary's `postgresql.conf`
   - `PG_HBA`: Path to primary's `pg_hba.conf`
-  - `REPLICATION_USER`: Replication role credentials
+  - `REPLICATION_USER`: Replication role credentials (for db migrations)
   - `REPLICATION_PASSWORD`: Replication role credentials
   - `SLOT_NAME`: Replication slot name (e.g., `replica_slot_1`)
   - `DATA_DIR`: Standby PostgreSQL data directory
-  - `BACKUP_DIR`: Root directory for backups (e.g., `/var/backups/postgres`)
-  - `DB_USER`
-  - `DB_PASSWORD`
+  - `BACKUP_DIR`: Root directory for backups (e.g., `/var/lib/pgsql/16/backups`)
+   - `DB_NAME`
+   - `USER_FOR_DB_BACKUPS`
+   - `PASSWORD_FOR_DB_BACKUPS`
 
 **Usage**:
 ```bash
-cd setup_scripts
+cd setup_scripts/server_setup
 sudo bash setup_server.sh
 ```
+
+Do not use this path for local-first development bootstrap.
 
 **What It Does**:
 1. Creates sudo-capable users from `LIST_OF_SUDO_USERS` array
@@ -111,7 +116,7 @@ psql -c "SELECT pg_is_in_recovery();"
 
 **Key Variables** (from `.env`):
 - `BACKUP_DIR`: Root directory for backups (e.g., `/var/backups/postgres`)
-- `DB_USER`, `DB_PASSWORD`: Database user for backup execution
+- `USER_FOR_DB_BACKUPS`, `PASSWORD_FOR_DB_BACKUPS`: Database user credentials for backup execution
 - `BACKUP_CRON_SCHEDULE`: Cron schedule (e.g., `0 2 * * *` = 2 AM daily)
 - `PG_CONF`: Path to `postgresql.conf` (requires write access)
 
@@ -137,6 +142,10 @@ sudo crontab -l | grep backup_database
 
 Two separate cron scripts install the data collection and transformation pipelines.
 
+Both scripts support two install modes via `CRON_INSTALL_MODE` in `.env`:
+- `user` (default): installs wrappers in `CRON_WRAPPER_DIR` (default: `.ops/bin`) and writes to the target user's crontab.
+- `system`: installs wrappers in `/usr/local/bin` and writes files into `/etc/cron.d` (requires sudo).
+
 ### Daily Intraday Collector (`setup_cronjob_daily_collector.sh`)
 
 **Purpose**: Schedule `src/intraday_data_collection.py` to run regularly during market hours.
@@ -144,28 +153,37 @@ Two separate cron scripts install the data collection and transformation pipelin
 **Prerequisites**:
 - Python virtual environment installed at `$PROJECT_DIR/.venv`
 - `.env` file with FMP_API_KEY and database credentials
-- Sudo access
+- `crontab` command available for the target user
+- Sudo access only when `CRON_INSTALL_MODE=system`
 
 **Usage**:
 ```bash
-sudo bash setup_scripts/setup_cronjob_daily_collector.sh
+# Default local-first install (user mode)
+bash setup_scripts/setup_cronjob_daily_collector.sh
+
+# Optional system install for shared servers
+sudo CRON_INSTALL_MODE=system bash setup_scripts/setup_cronjob_daily_collector.sh
 ```
 
 **What It Does**:
-1. Creates `logs/` directory (if missing) with proper permissions
-2. Creates wrapper script at `/usr/local/bin/run_stock_collector.sh`
-3. Registers cron job in `/etc/cron.d/stock_collector_daily`
+1. Ensures Python dependencies exist in `.venv`
+2. Ensures `LOG_DIR` exists and is writable by the runtime user
+3. Installs wrapper and cron entry based on `CRON_INSTALL_MODE`
+4. Replaces any prior collector entry tagged `COSC471_STOCK_COLLECTOR`
 
 **Cron Schedule** (from `.env`):
 - `COLLECTION_SCHEDULE`: Default `0 * * * *` (every hour)
 
 **Post-Setup Validation**:
 ```bash
-# Check the wrapper script was created
-cat /usr/local/bin/run_stock_collector.sh
+# Check user-mode cron entry
+crontab -l | grep COSC471_STOCK_COLLECTOR
 
-# Check the cron job was registered
-sudo crontab -l | grep run_stock_collector
+# Check user-mode wrapper
+cat .ops/bin/run_stock_collector.sh
+
+# Check system-mode cron entry (if used)
+sudo cat /etc/cron.d/stock_collector_daily
 
 # Check logs directory permissions
 ls -ld ./logs
@@ -173,44 +191,53 @@ ls -ld ./logs
 
 ### Scheduled Operations (`setup_cronjob_scheduled_operations.sh`)
 
-**Purpose**: Schedule `src/run_scheduled_operations.py` to run SQL transformation scripts after collection.
+**Purpose**: Schedule `src/run_scheduled_operations.py` to run the Python transform/load pipeline after collection.
 
 **Prerequisites**:
 - Python virtual environment installed at `$PROJECT_DIR/.venv`
 - `.env` file with database credentials
-- `operation_logs.pipeline_logs` table created in the database
-- Sudo access
+- Database schema initialized (recommended: `python -m alembic upgrade head`)
+- `crontab` command available for the target user
+- Sudo access only when `CRON_INSTALL_MODE=system`
 
 **Usage**:
 ```bash
-sudo bash setup_scripts/setup_cronjob_scheduled_operations.sh
+# Default local-first install (user mode)
+bash setup_scripts/setup_cronjob_scheduled_operations.sh
+
+# Optional system install for shared servers
+sudo CRON_INSTALL_MODE=system bash setup_scripts/setup_cronjob_scheduled_operations.sh
 ```
 
 **What It Does**:
-1. Creates `logs/` directory (if missing) with proper permissions
-2. Creates wrapper script at `/usr/local/bin/run_scheduled_operations.sh`
-3. Registers cron job in `/etc/cron.d/scheduled_operations`
+1. Ensures Python dependencies exist in `.venv`
+2. Ensures `LOG_DIR` exists and is writable by the runtime user
+3. Installs wrapper and cron entry based on `CRON_INSTALL_MODE`
+4. Replaces any prior scheduled-operations entry tagged `COSC471_SCHEDULED_OPERATIONS`
 
 **Cron Schedule** (from `.env`):
 - `STG_TO_CORE_SCHEDULE`: Default `0 2 * * *` (2 AM UTC daily)
 
 **Post-Setup Validation**:
 ```bash
-# Check the wrapper script was created
-cat /usr/local/bin/run_scheduled_operations.sh
+# Check user-mode cron entry
+crontab -l | grep COSC471_SCHEDULED_OPERATIONS
 
-# Check the cron job was registered
-sudo crontab -l | grep run_scheduled_operations
+# Check user-mode wrapper
+cat .ops/bin/run_scheduled_operations.sh
 
-# Verify operation_logs.pipeline_logs is accessible
-psql -d "$PGDATABASE" -c "SELECT COUNT(*) FROM operation_logs.pipeline_logs;"
+# Check system-mode cron entry (if used)
+sudo cat /etc/cron.d/scheduled_operations
+
+# Check logs directory permissions
+ls -ld ./logs
 ```
 
 ---
 
 ## Manual Utilities
 
-### CSV Bulk Load (`load_stg_raw_market_data.sh`)
+### CSV Bulk Load (`src/historical_csv_data_load.py`)
 
 **Purpose**: Load historical OHLCV data from CSV files into `stg_raw.market_data`.
 
@@ -224,25 +251,26 @@ psql -d "$PGDATABASE" -c "SELECT COUNT(*) FROM operation_logs.pipeline_logs;"
 
 **Usage**:
 ```bash
-bash setup_scripts/load_stg_raw_market_data.sh
+# Python ORM loader (canonical entrypoint)
+python src/historical_csv_data_load.py --csv-dir /path/to/csv/files
 ```
 
 **What It Does**:
 1. Iterates over all `.csv` files in the configured directory
-2. For each file, creates a temporary SQL script that:
-   - Creates a temp table with text columns
-   - Copies CSV data into temp table
-   - Parses and casts columns to the correct types
-   - Inserts into `stg_raw.market_data` with source = `'CSV_bulk_load'`
-3. Deletes the temp table and cleans up
+2. Validates required columns (`date, open, high, low, close, volume`)
+3. Parses/casts rows in Python and upserts to `stg_raw.market_data`
+4. Falls back to INSERT-only batches if a legacy database is missing the upsert key
 
-**Configuration** (edit in script):
-- `CSV_PATH`: Directory containing CSV files (default: `/path/to/Your/File/29-stocks-5-min`)
+**Configuration**:
+- `--csv-dir`: Directory containing CSV files (required unless `CSV_PATH` is set in `.env`)
+- `--pattern`: File glob pattern (default: `*.csv`)
+- `--skip-invalid-rows`: Continue loading valid rows when malformed rows are present
+- `--dry-run`: Parse/validate only, no database writes
 
 **Post-Upload Validation**:
 ```bash
 # Count rows loaded per symbol
-psql -d "$PGDATABASE" -c "SELECT symbol, COUNT(*) FROM stg_raw.market_data WHERE source = 'CSV_bulk_load' GROUP BY symbol ORDER BY symbol;"
+psql -d "$DB_NAME" -c "SELECT symbol, COUNT(*) FROM stg_raw.market_data WHERE source = 'CSV_bulk_load' GROUP BY symbol ORDER BY symbol;"
 ```
 
 ---
@@ -270,8 +298,8 @@ DATA_DIR="/var/lib/pgsql/16/data"
 ### Backup Configuration
 ```bash
 BACKUP_DIR="/var/backups/postgres"
-DB_USER="postgres"
-DB_PASSWORD="change_me"
+USER_FOR_DB_BACKUPS="postgres"
+PASSWORD_FOR_DB_BACKUPS="change_me"
 BACKUP_CRON_SCHEDULE="0 2 * * *"  # 2 AM UTC daily
 ```
 
@@ -281,13 +309,19 @@ COLLECTION_SCHEDULE="0 * * * *"      # Every hour
 STG_TO_CORE_SCHEDULE="0 2 * * *"     # 2 AM UTC daily
 ```
 
-### PostgreSQL Connection (inherited from `.env`)
+### Cron Installer Mode
 ```bash
-PGHOST="localhost"
-PGPORT="5432"
-PGDATABASE="market_data"
-PGUSER="etl_user"
-PGPASSWORD="your_password"
+CRON_INSTALL_MODE="user"    # user or system
+CRON_WRAPPER_DIR=".ops/bin" # used in user mode
+```
+
+### Database Connection (inherited from `.env`)
+```bash
+DB_HOST="localhost"
+DB_PORT="5432"
+DB_NAME="market_data"
+DB_USER="etl_user"
+DB_PASSWORD="your_password"
 ```
 
 ---
@@ -310,14 +344,14 @@ sleep 60
 psql -c "SELECT pg_is_in_recovery();"  # Standby should return 't'
 
 # 4. Install cron jobs
-sudo bash setup_cronjob_daily_collector.sh
-sudo bash setup_cronjob_scheduled_operations.sh
+bash setup_cronjob_daily_collector.sh
+bash setup_cronjob_scheduled_operations.sh
 
 # 5. Verify cron jobs are registered
-sudo crontab -l
+crontab -l
 
 # 6. Optionally load historical data
-bash load_stg_raw_market_data.sh
+python ../src/historical_csv_data_load.py --csv-dir /path/to/csv/files
 ```
 
 ---
@@ -328,8 +362,9 @@ bash load_stg_raw_market_data.sh
 |-------|-------|-----|
 | Replication fails to start | `pg_is_in_recovery()` returns false | Check PRIMARY_IP, REPLICATION_USER credentials, and pg_hba.conf |
 | Backup script cannot write | `ls -ld "$BACKUP_DIR"` | Ensure postgres user owns the backup directory: `sudo chown postgres:postgres $BACKUP_DIR` |
-| Cron job doesn't run | `sudo crontab -l` | Ensure sudo bash was used; check wrapper script at `/usr/local/bin/` exists and is executable |
+| Cron job doesn't run | `crontab -l` or `sudo cat /etc/cron.d/...` | Verify `CRON_INSTALL_MODE`, wrapper path (`.ops/bin` for user mode), and executable permissions |
 | CSV import fails | Check CSV column names and types | Ensure columns are: `date, open, high, low, close, volume` and all numeric values parse as valid decimals |
+| Timestamps appear shifted to server local time | `psql -c "SHOW TIMEZONE;"` returns an unexpected value | Set DB/session timezone explicitly (commonly UTC): `ALTER DATABASE <db_name> SET TIMEZONE TO 'UTC';`. For display in market time, use `AT TIME ZONE 'America/New_York'`. |
 | Permission denied on user creation | Check `/etc/sudoers` | Only run `setup_server.sh` as root or with sudo; don't use it in a restricted shell |
 
 ---
@@ -338,4 +373,4 @@ bash load_stg_raw_market_data.sh
 
 - [README.md](../README.md) — Project overview and quick start
 - [.env.template](../.env.template) — Full environment variable reference
-- [setup_scripts/table_creation_script/](table_creation_script/) — Schema definitions
+- [alembic/versions/](../alembic/versions/) — Canonical migration history

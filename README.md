@@ -19,12 +19,11 @@ FMP API
       └─→ stg_raw.market_data
           │
           ├─→ run_scheduled_operations.py (scheduled)
-          │   │
-          │   └─→ export_stg_to_core.sql
-          │       ├─ Ranks rows by ingest time
-          │       ├─ Deduplicates on (symbol, ts)
-          │       ├─ Validates OHLCV completeness
-          │       └─ Upserts into core_dbms.market_data_5m
+          │   ├─→ Python pipeline steps
+          │   │   ├─ Ranks rows by ingest time
+          │   │   ├─ Deduplicates on (symbol, ts)
+          │   │   ├─ Validates OHLCV completeness
+          │   │   └─ Upserts into core_dbms.market_data_5m
           │
           └─→ operation_logs.*
               ├─ dedup_conflicts
@@ -37,10 +36,10 @@ FMP API
 
 ### 1. Install Dependencies
 ```bash
-pip install -r requirements.txt
-python -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements-dev.txt
+pip install -r requirements.txt
 ```
 
 ### 2. Configure Environment
@@ -52,31 +51,52 @@ cp .env.template .env
 
 Required environment variables:
 - **API**: `FMP_API_KEY`, `SYMBOLS`, `MARKET_TZ`, `WINDOW_MINUTES`
-- **Database**: `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`
+- **Database**: `DATABASE_URL` or `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`
 - **Runtime**: `LOG_DIR`, `MARKET_OPEN`, `MARKET_CLOSE`
+
+Breaking change: runtime `PG*` connection keys were removed in favor of `DB_*` keys.
 
 See [.env.template](.env.template) for all options.
 
-### 3. Set Up Database & Cron
+### 3. Setup Server 
+
 ```bash
-# One-time setup (requires sudo and .env)
-cd setup_scripts
-sudo bash setup_server.sh              # Creates users, replication, backups
-sudo bash setup_cronjob_daily_collector.sh    # Schedules intraday collection
-sudo bash setup_cronjob_scheduled_operations.sh  # Schedules stg→core export
+cd setup_scripts/server_setup
+sudo bash setup_server.sh 
 ```
 
 For detailed setup instructions, see [setup_scripts/README.md](setup_scripts/README.md).
+and [One-Time Server Setup (`setup_server.sh`)](setup_scripts/server_setup/setup_server.sh)
 
-### 4. Manual Testing
+### 4. Initialize Database Schema
 ```bash
+# Navigate back to the project root
+cd ../..
+python -m alembic upgrade head
+
+# Convenience initializer for disposable local/test databases
+python -c "from dotenv import load_dotenv; from src.model.orm_db import build_postgres_url, get_engine, init_db; import os; load_dotenv(); init_db(get_engine(os.getenv('DB_HOST', 'localhost'), int(os.getenv('DB_PORT', '5432')), os.getenv('DB_NAME', 'market_data'), os.getenv('DB_USER', 'user'), os.getenv('DB_PASSWORD', 'password')))"
+```
+
+### 5.  Cron Setup
+Server cron jobs require privileged access.
+
+```bash
+# Local/user cron install (default mode)
+sudo bash setup_scripts/setup_cronjob_daily_collector.sh
+sudo bash setup_scripts/setup_cronjob_scheduled_operations.sh
+```
+
+### 6. Manual Testing
+```bash
+pytest tests/unit/ -v
 # Collect the latest completed interval
 python src/intraday_data_collection.py
 
 # Backfill a past date range
 python src/gather_past_data.py --from-date 2026-02-01 --to-date 2026-02-07
 
-# Transform and load to core warehouse
+# Transform and load to the core schema
 python src/run_scheduled_operations.py
 ```
 
@@ -102,7 +122,7 @@ Three entry points drive the pipeline:
 
 ### `run_scheduled_operations.py` — Transform & Load
 - **Trigger**: Scheduled via cron (default: daily at 2 AM UTC)
-- **Purpose**: Execute SQL scripts in `src/sql_operations/` in alphabetical order to move/transform data from staging to core warehouse
+- **Purpose**: Execute Python pipeline steps to deduplicate staging data, log quality issues, upsert into core, and clean staging after a successful export
 - **Output**: Rows in `core_dbms.market_data_5m` and audit logs in `operation_logs.*`
 - **Usage**: `python src/run_scheduled_operations.py`
 - **Logs**: Execution status written to `operation_logs.pipeline_logs`
@@ -132,7 +152,7 @@ Audit trail for debugging and monitoring. Tables include:
 - **`backup_logs`**: Backup/restore event history
 - **`cast_errors`**: Type conversion failures during ingestion
 
-See [setup_scripts/table_creation_script/operation_logs/README.MD](setup_scripts/table_creation_script/operation_logs/README.MD) for table details.
+See `src/model/models.py` and `alembic/versions/20260312_0001_baseline_schema.py` for the canonical table definitions.
 
 ## Configuration Reference
 
@@ -149,11 +169,12 @@ See [setup_scripts/table_creation_script/operation_logs/README.MD](setup_scripts
 - **`FMP_API_DELAY_SECONDS`**: Delay between API calls to respect rate limits (default: `0.2`)
 
 ### Database
-- **`PGHOST`**: PostgreSQL server hostname
-- **`PGPORT`**: PostgreSQL server port (default: `5432`)
-- **`PGDATABASE`**: Database name
-- **`PGUSER`**: Database user
-- **`PGPASSWORD`**: Database password
+- **`DATABASE_URL`**: Full SQLAlchemy-compatible database URL (optional, takes precedence over component keys)
+- **`DB_HOST`**: Database server hostname
+- **`DB_PORT`**: Database server port (default: `5432`)
+- **`DB_NAME`**: Database name
+- **`DB_USER`**: Database user
+- **`DB_PASSWORD`**: Database password
 - **`TEST_DATABASE_URL`**: Separate test database URL for pytest (optional)
 
 ### Runtime
@@ -170,14 +191,14 @@ See [setup_scripts/table_creation_script/operation_logs/README.MD](setup_scripts
 | `no matching row in table` | Test database not initialized | Run pytest setup or initialize manually |
 | `UNIQUE constraint violation` | Attempted duplicate insert outside upsert | Check caller is using ORM with `on_conflict_do_update` |
 | `permission denied on sequence` | Database role lacks privileges | Grant sequence privileges to user in PostgreSQL |
-| `Log directory does not exist` | Setup script not run | Execute `sudo bash setup_scripts/setup_cronjob_*.sh` |
+| `Log directory is not writable` | `LOG_DIR` points to a protected location | Set `LOG_DIR` to a writable project-local path such as `./logs` |
 
 ## Documentation Map
 
 - **[src/README.md](src/README.md)**: Runnable scripts, supporting modules, and design patterns
-- **[src/sql_operations/README.md](src/sql_operations/README.md)**: SQL script execution order and side effects
+- **[src/utils/scheduled_pipeline.py](src/utils/scheduled_pipeline.py)**: Python export and staging cleanup logic used by the scheduled runner
 - **[setup_scripts/README.md](setup_scripts/README.md)**: Server setup, replication, backup, and cron installation
-- **[setup_scripts/table_creation_script/](setup_scripts/table_creation_script/)**: Schema definitions and table designs
+- **[alembic/versions/](alembic/versions/)**: Migration history and canonical schema evolution
 - **[tests/README.md](tests/README.md)**: Test organization, fixtures, and coverage reporting
 - **[.env.template](.env.template)**: Environment variable reference
 
@@ -198,7 +219,7 @@ See [tests/README.md](tests/README.md) for more options and fixture documentatio
 ## Architecture & Design Notes
 
 - **Idempotency**: All three entry points are safe to run multiple times; they upsert rather than insert
-- **Alphabetical SQL execution**: `run_scheduled_operations.py` runs `.sql` files in `src/sql_operations/` in alphabetical order; file naming matters
+- **Dependency-aware pipeline execution**: `run_scheduled_operations.py` runs fixed Python steps in order and skips cleanup when export fails
 - **No external broker**: Execution is simple cron + database; no message queue or event system
 - **Observability**: All execution is logged to `operation_logs.pipeline_logs` and file-based error CSVs in `./logs/`
 
@@ -207,7 +228,7 @@ See [tests/README.md](tests/README.md) for more options and fixture documentatio
 Before submitting a PR:
 1. Run `pytest` locally and ensure all tests pass
 2. Update documentation if you change schema, environment variables, or operational behavior
-3. Add tests for new data validation or SQL transformation logic
+3. Add tests for new data validation or Python pipeline transformation logic
 4. Keep error logging consistent with [src/utils/logging_utils.py](src/utils/logging_utils.py)
 
 See [.github/pull_request_template.md](.github/pull_request_template.md) for the required PR checklist.

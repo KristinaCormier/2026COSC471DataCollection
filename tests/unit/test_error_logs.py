@@ -164,18 +164,17 @@ def test_all_error_logs_use_iso_timestamps(mock_error_log_dir):
     assert parsed.tzinfo is not None
 
 
-def test_error_log_directory_validation_fails_if_missing(monkeypatch):
-    """Test that _validate_log_dir raises FileNotFoundError if directory missing."""
+def test_error_log_directory_validation_creates_missing_directory(tmp_path):
+    """Test that _validate_log_dir creates a missing directory."""
     from pathlib import Path
     from utils import logging_utils
-    
-    missing_dir = Path("/nonexistent/path/dc_error_logs")
-    
-    with pytest.raises(FileNotFoundError) as exc_info:
-        logging_utils._validate_log_dir(missing_dir)
-    
-    assert "does not exist" in str(exc_info.value)
-    assert str(missing_dir) in str(exc_info.value)
+
+    missing_dir = tmp_path / "nested" / "dc_error_logs"
+
+    logging_utils._validate_log_dir(missing_dir)
+
+    assert missing_dir.exists()
+    assert missing_dir.is_dir()
 
 
 def test_error_log_directory_validation_succeeds_if_exists_and_writable(mock_error_log_dir):
@@ -186,15 +185,13 @@ def test_error_log_directory_validation_succeeds_if_exists_and_writable(mock_err
     logging_utils._validate_log_dir(mock_error_log_dir)
 
 
-def test_error_log_file_creation_requires_valid_directory(tmp_path):
-    """Test that _ensure_log_file validates parent directory before creating file."""
-    from pathlib import Path
+def test_error_log_file_creation_creates_missing_parent_directory(tmp_path):
+    """Test that _ensure_log_file creates a missing parent directory."""
     from utils import logging_utils
-    
+
     missing_parent = tmp_path / "missing" / "dc_error_logs" / "api_errors.csv"
-    
-    with pytest.raises(FileNotFoundError) as exc_info:
-        logging_utils._ensure_log_file(missing_parent, ["timestamp", "symbol", "error"])
-    
-    assert "does not exist" in str(exc_info.value)
+
+    logging_utils._ensure_log_file(missing_parent, ["timestamp", "symbol", "error"])
+
+    assert missing_parent.exists()
 

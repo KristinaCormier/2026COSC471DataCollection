@@ -11,7 +11,7 @@ Intended Use:
 
 Environment Variables:
     API: FMP_API_KEY, FMP_API_URL, FMP_API_DELAY_SECONDS, SYMBOLS, MARKET_TZ, WINDOW_MINUTES
-    Database: PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD
+    Database: DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD
     Runtime: LOG_DIR, MARKET_OPEN, MARKET_CLOSE
 
 Usage:
@@ -69,11 +69,11 @@ def main():
     market_open = os.environ.get("MARKET_OPEN", "04:00")
     market_close = os.environ.get("MARKET_CLOSE", "21:00")
 
-    pghost = os.environ.get("PGHOST", "")
-    pgport = int(os.environ.get("PGPORT", "5432"))
-    pgdatabase = os.environ.get("PGDATABASE", "")
-    pguser = os.environ.get("PGUSER", "")
-    pgpassword = os.environ.get("PGPASSWORD", "")
+    db_host = os.environ.get("DB_HOST", "")
+    db_port = int(os.environ.get("DB_PORT", "5432"))
+    db_name = os.environ.get("DB_NAME", "")
+    db_user = os.environ.get("DB_USER", "")
+    db_password = os.environ.get("DB_PASSWORD", "")
 
     tz = ZoneInfo(market_tz)
     now_local = dt.datetime.now(tz)
@@ -126,15 +126,15 @@ def main():
     )
 
     print("Connecting to database with:")
-    print("HOST:", pghost)
-    print("PORT:", pgport)
-    print("DATABASE:", pgdatabase)
-    print("USER:", pguser)
+    print("HOST:", db_host)
+    print("PORT:", db_port)
+    print("DATABASE:", db_name)
+    print("USER:", db_user)
 
     session: Session | None = None
 
     try:
-        engine = get_engine(pghost, pgport, pgdatabase, pguser, pgpassword)
+        engine = get_engine(db_host, db_port, db_name, db_user, db_password)
         init_db(engine)
         print("Loaded models from:", MarketData.__module__)
         print("Table columns:", list(MarketData.__table__.columns.keys()))
@@ -148,7 +148,7 @@ def main():
             error_message=str(e),
             tz=tz,
         )
-        print(f"cannot connect to Postgres: {e}", file=sys.stderr)
+        print(f"cannot connect to database: {e}", file=sys.stderr)
         sys.exit(2)
 
     total = 0

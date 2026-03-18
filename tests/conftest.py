@@ -28,7 +28,7 @@ Usage:
         pass
 
 Environment:
-    - PGPORT, PGHOST, PGDATABASE, PGUSER, PGPASSWORD default to safe test values
+    - DB_PORT, DB_HOST, DB_NAME, DB_USER, DB_PASSWORD default to safe test values
     - TEST_DATABASE_URL can override all connection settings at once
     - All database operations are wrapped in transactions for test isolation
 
@@ -47,7 +47,7 @@ import pytest
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 # Ensure required env vars exist before importing modules under test.
-os.environ.setdefault("PGPORT", "5432")
+os.environ.setdefault("DB_PORT", "5432")
 
 
 @pytest.fixture(scope="session")

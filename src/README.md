@@ -38,7 +38,7 @@ python src/intraday_data_collection.py
 - `FMP_API_DELAY_SECONDS`: Delay between API calls (default: `0.2`)
 
 **Environment Variables** (Database):
-- `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`
+- `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`
 - `LOG_DIR`: Directory for error logs (default: `./logs`)
 
 **Output**:
@@ -88,21 +88,21 @@ python src/gather_past_data.py --from-date 2026-02-01 --to-date 2026-02-07 --sym
 
 ### `run_scheduled_operations.py`
 
-**Purpose**: Execute SQL transformation scripts in `src/sql_operations/` to move and transform data from staging to the core warehouse.
+**Purpose**: Execute Python transformation steps that move and reconcile data from staging to the core warehouse.
 
 **Trigger**: Scheduled via cron (default: 2 AM UTC daily, see `STG_TO_CORE_SCHEDULE` in `.env`)
 
 **What It Does**:
 1. Loads a fixed execution plan:
-  - `export_stg_to_core.sql`
-  - `truncate_stg_raw.sql` (runs only if export succeeds)
-2. For each planned script:
-   - Reads the SQL script
-   - Executes it as a single transaction
+  - `export_stg_to_core`
+  - `truncate_stg_raw` (runs only if export succeeds)
+2. For each planned step:
+   - Opens a SQLAlchemy session
+   - Executes Python/ORM transformation logic in a single transaction
    - Logs the execution (status, duration, error) to `operation_logs.pipeline_logs`
    - Commits on success or rolls back on failure
-3. Logs and skips dependent scripts when prerequisites fail
-4. Writes execution summary to file: `LOG_DIR/scheduled_operations.log`
+3. Logs and skips dependent steps when prerequisites fail
+4. Creates `LOG_DIR` automatically when needed and writes execution summary to `LOG_DIR/scheduled_operations.log`
 
 **Usage**:
 ```bash
@@ -110,20 +110,18 @@ python src/run_scheduled_operations.py
 ```
 
 **Environment Variables** (Required):
-- `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`
+- `DATABASE_URL` or `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`
 - `LOG_DIR`: Directory for execution logs (default: `./logs`)
 
 **Output**:
-- Rows in `core_dbms.market_data_5m` (after export_stg_to_core.sql)
+- Rows in `core_dbms.market_data_5m`
 - Audit logs in `operation_logs.pipeline_logs`
 - Rows in `operation_logs.*` error tables (duplicates, quality errors)
 - Execution log: `LOG_DIR/scheduled_operations.log`
 
-**Critical Detail**: SQL files execute in a **fixed, dependency-aware order**:
-1. `export_stg_to_core.sql` — Dedup, validate, and export to core warehouse
-2. `truncate_stg_raw.sql` — Clean up staging, but only after successful export
-
-Additional `.sql` files in `src/sql_operations/` are ignored unless explicitly added to the execution plan in `run_scheduled_operations.py`.
+**Critical Detail**: The pipeline executes in a **fixed, dependency-aware order**:
+1. `export_stg_to_core` — Dedup, validate, and export to core warehouse
+2. `truncate_stg_raw` — Clean up staging, but only after successful export
 
 ## Supporting Modules
 
@@ -176,29 +174,16 @@ Shared utility modules imported by entry-point scripts.
   - `log_db_error()` — Log database operation failures
   - Writes to CSV files in `LOG_DIR/`
 
+- **`scheduled_pipeline.py`**: Scheduled transform/load operations
+  - `export_staging_to_core()` — Deduplicate, validate, log issues, and upsert into `core_dbms.market_data_5m`
+  - `clear_staging_tables()` — Remove processed rows from `stg_raw` after successful export
+  - Pure helper functions that keep the transform rules unit-testable without a live database
+
 - **`time_utils.py`**: Time parsing and window calculation
   - `parse_hhmm()` — Parse "HH:MM" format
   - `compute_window()` — Calculate 5-minute collection window from current time
   - `ymd()` — Format date as "YYYY-MM-DD"
   - Timezone-aware all the way
-
-### `sql_operations/` Directory
-
-SQL scripts executed by `run_scheduled_operations.py`.
-
-- **`export_stg_to_core.sql`**: Main transformation pipeline
-  - Ranks rows in staging by ingest time (latest wins)
-  - Logs duplicates to `operation_logs.dedup_conflicts`
-  - Validates OHLCV completeness and quality
-  - Logs quality errors to `operation_logs.data_quality_errors`
-  - Upserts valid rows to `core_dbms.market_data_5m`
-
-- **`truncate_stg_raw.sql`**: Cleanup operation
-  - Truncates all tables in `stg_raw` schema
-  - Restarts identity sequences
-  - Called after successful export to reset for the next cycle
-
-See [sql_operations/README.md](sql_operations/README.md) for detailed documentation.
 
 ## Design Patterns & Standards
 
@@ -245,6 +230,6 @@ python intraday_data_collection.py
 ## See Also
 
 - [README.md](../README.md) — Project overview and data flow
-- [sql_operations/README.md](sql_operations/README.md) — SQL transformation details
+- [utils/scheduled_pipeline.py](utils/scheduled_pipeline.py) — Python transform/load details
 - [../setup_scripts/README.md](../setup_scripts/README.md) — Cron and server setup
 - [../tests/README.md](../tests/README.md) — Testing and CI

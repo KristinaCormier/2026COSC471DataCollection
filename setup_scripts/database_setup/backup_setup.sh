@@ -16,7 +16,7 @@
 #     - Backup directory must be writable by postgres user
 #     - Sufficient disk space for multiple base backups
 #     - WAL archiving enabled (wal_level = replica)
-#     - .env file with BACKUP_DIR, DB_USER, DB_PASSWORD, BACKUP_CRON_SCHEDULE
+#     - .env file with BACKUP_DIR, USER_FOR_DB_BACKUPS, PASSWORD_FOR_DB_BACKUPS, BACKUP_CRON_SCHEDULE
 #
 # What It Does:
 #     1. Creates BACKUP_DIR and WAL archive subdirectory
@@ -30,8 +30,8 @@
 #
 # Environment Variables (from .env):
 #     BACKUP_DIR: Root directory for backups (e.g., '/var/backups/postgres')
-#     DB_USER: Database user for backup execution (usually 'postgres')
-#     DB_PASSWORD: Password for DB_USER
+#     USER_FOR_DB_BACKUPS: Database user for backup execution (usually 'postgres')
+#     PASSWORD_FOR_DB_BACKUPS: Password for USER_FOR_DB_BACKUPS
 #     BACKUP_CRON_SCHEDULE: Cron schedule (e.g., '0 2 * * *' = 2 AM daily)
 #     PG_CONF: Full path to postgresql.conf
 #
@@ -83,7 +83,7 @@ set -e
 # It creates a backup directory, sets permissions, and schedules a cron job for regular backups.
 
 # Define variables from .env file: source the .env file to get the necessary variables
-ENV_FILE="../.env"
+ENV_FILE="../../.env"
 if [ -f "$ENV_FILE" ]; then
     set -a
     . "$ENV_FILE"
@@ -132,8 +132,8 @@ if [ ! -d "$BACKUP_DIR/base_backup" ]; then
     mkdir -p "$BACKUP_DIR/base_backup"
     chown -R postgres:postgres "$BACKUP_DIR/base_backup"
     # Perform base backup using pg_basebackup as postgres user
-    export PGPASSWORD="$DB_PASSWORD"
-    sudo -u postgres pg_basebackup -h localhost -D "$BACKUP_DIR/base_backup" -U "$DB_USER" -P -v -Ft -z
+    export PGPASSWORD="$PASSWORD_FOR_DB_BACKUPS"
+    sudo -u postgres pg_basebackup -h localhost -D "$BACKUP_DIR/base_backup" -U "$USER_FOR_DB_BACKUPS" -P -v -Ft -z
     echo "Created base backup at $BACKUP_DIR/base_backup"
 else
     echo "Base backup directory already exists at $BACKUP_DIR/base_backup"
@@ -152,11 +152,11 @@ export PATH=$PATH:/usr/pgsql-16/bin
 
 TIMESTAMP=\$(date +"%F_%H-%M-%S")
 BACKUP_DIR="$BACKUP_DIR"
-DB_USER="$DB_USER"
-export PGPASSWORD="$DB_PASSWORD"
+USER_FOR_DB_BACKUPS="$USER_FOR_DB_BACKUPS"
+export PGPASSWORD="$PASSWORD_FOR_DB_BACKUPS"
 
 # Perform base backup using pg_basebackup as postgres user
-pg_basebackup -h localhost -U "$DB_USER" -D "$BACKUP_DIR/base_backup_\$TIMESTAMP" -Ft -z
+pg_basebackup -h localhost -U "$USER_FOR_DB_BACKUPS" -D "$BACKUP_DIR/base_backup_\$TIMESTAMP" -Ft -z
 
 # Remove backups older than 7 days
 find "$BACKUP_DIR" -maxdepth 1 -type d -name "base_backup_*" -daystart -mtime +7 -exec rm -rf {} +

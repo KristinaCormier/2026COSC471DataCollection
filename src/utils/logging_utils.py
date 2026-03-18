@@ -19,20 +19,16 @@ ERROR_LOG_DIR = Path(os.getenv("LOG_DIR", "./logs")) # Default to ./logs if not 
 
 def _validate_log_dir(log_dir: Path) -> None:
     """
-    Validate that the log directory exists and is writable.
+    Ensure the log directory exists and is writable.
     
     Args:
         log_dir: Path to the log directory
         
     Raises:
-        FileNotFoundError: If directory does not exist
+        NotADirectoryError: If the path exists but is not a directory
         PermissionError: If directory is not writable
     """
-    if not log_dir.exists():
-        raise FileNotFoundError(
-            f"Log directory does not exist: {log_dir}\n"
-            f"Run the setup script: sudo bash setup_scripts/setup_cronjob_[daily_collector|scheduled_operations].sh"
-        )
+    log_dir.mkdir(parents=True, exist_ok=True)
     if not log_dir.is_dir():
         raise NotADirectoryError(f"Log path exists but is not a directory: {log_dir}")
     
@@ -47,14 +43,14 @@ def _validate_log_dir(log_dir: Path) -> None:
 def _ensure_log_file(log_path: Path, headers: list[str]) -> None:
     """
     Ensure the log file exists with proper headers.
-    Validates that the log directory exists and is writable.
+    Validates that the log directory is writable.
     
     Args:
         log_path: Path to the log file
         headers: List of column headers
         
     Raises:
-        FileNotFoundError: If log directory does not exist
+        NotADirectoryError: If log directory path is not a directory
         PermissionError: If log directory is not writable
     """
     # Validate parent directory exists and is writable

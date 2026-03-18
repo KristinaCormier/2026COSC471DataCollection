@@ -30,11 +30,11 @@ jobs:
     
     env:
       # Required environment variables for intraday_data_collection module imports
-      PGPORT: 5432
-      PGHOST: localhost
-      PGDATABASE: test_db
-      PGUSER: test_user
-      PGPASSWORD: test_password
+      DB_PORT: 5432
+      DB_HOST: localhost
+      DB_NAME: test_db
+      DB_USER: test_user
+      DB_PASSWORD: test_password
       FMP_API_KEY: test_api_key
       SYMBOLS: AAPL,MSFT
       MARKET_TZ: America/New_York
