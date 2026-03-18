@@ -51,8 +51,10 @@ cp .env.template .env
 
 Required environment variables:
 - **API**: `FMP_API_KEY`, `SYMBOLS`, `MARKET_TZ`, `WINDOW_MINUTES`
-- **Database**: `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`
+- **Database**: `DATABASE_URL` or `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`
 - **Runtime**: `LOG_DIR`, `MARKET_OPEN`, `MARKET_CLOSE`
+
+Breaking change: runtime `PG*` connection keys were removed in favor of `DB_*` keys.
 
 See [.env.template](.env.template) for all options.
 
@@ -73,7 +75,7 @@ cd ../..
 python -m alembic upgrade head
 
 # Convenience initializer for disposable local/test databases
-python -c "from dotenv import load_dotenv; from src.model.orm_db import build_postgres_url, get_engine, init_db; import os; load_dotenv(); init_db(get_engine(os.getenv('PGHOST', 'localhost'), int(os.getenv('PGPORT', '5432')), os.getenv('PGDATABASE', 'market_data'), os.getenv('PGUSER', 'user'), os.getenv('PGPASSWORD', 'password')))"
+python -c "from dotenv import load_dotenv; from src.model.orm_db import build_postgres_url, get_engine, init_db; import os; load_dotenv(); init_db(get_engine(os.getenv('DB_HOST', 'localhost'), int(os.getenv('DB_PORT', '5432')), os.getenv('DB_NAME', 'market_data'), os.getenv('DB_USER', 'user'), os.getenv('DB_PASSWORD', 'password')))"
 ```
 
 ### 5.  Cron Setup
@@ -167,11 +169,12 @@ See `src/model/models.py` and `alembic/versions/20260312_0001_baseline_schema.py
 - **`FMP_API_DELAY_SECONDS`**: Delay between API calls to respect rate limits (default: `0.2`)
 
 ### Database
-- **`PGHOST`**: PostgreSQL server hostname
-- **`PGPORT`**: PostgreSQL server port (default: `5432`)
-- **`PGDATABASE`**: Database name
-- **`PGUSER`**: Database user
-- **`PGPASSWORD`**: Database password
+- **`DATABASE_URL`**: Full SQLAlchemy-compatible database URL (optional, takes precedence over component keys)
+- **`DB_HOST`**: Database server hostname
+- **`DB_PORT`**: Database server port (default: `5432`)
+- **`DB_NAME`**: Database name
+- **`DB_USER`**: Database user
+- **`DB_PASSWORD`**: Database password
 - **`TEST_DATABASE_URL`**: Separate test database URL for pytest (optional)
 
 ### Runtime

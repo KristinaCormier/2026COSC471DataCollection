@@ -38,7 +38,7 @@ python src/intraday_data_collection.py
 - `FMP_API_DELAY_SECONDS`: Delay between API calls (default: `0.2`)
 
 **Environment Variables** (Database):
-- `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`
+- `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`
 - `LOG_DIR`: Directory for error logs (default: `./logs`)
 
 **Output**:
@@ -110,7 +110,7 @@ python src/run_scheduled_operations.py
 ```
 
 **Environment Variables** (Required):
-- `DATABASE_URL` or `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`
+- `DATABASE_URL` or `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`
 - `LOG_DIR`: Directory for execution logs (default: `./logs`)
 
 **Output**:

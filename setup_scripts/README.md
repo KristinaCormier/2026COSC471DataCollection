@@ -30,9 +30,9 @@ For local developer onboarding, prefer the root [README quick start](../README.m
   - `SLOT_NAME`: Replication slot name (e.g., `replica_slot_1`)
   - `DATA_DIR`: Standby PostgreSQL data directory
   - `BACKUP_DIR`: Root directory for backups (e.g., `/var/lib/pgsql/16/backups`)
-  - `PGDATABASE`
-  - `DB_USER`
-  - `DB_PASSWORD`
+   - `DB_NAME`
+   - `USER_FOR_DB_BACKUPS`
+   - `PASSWORD_FOR_DB_BACKUPS`
 
 **Usage**:
 ```bash
@@ -116,7 +116,7 @@ psql -c "SELECT pg_is_in_recovery();"
 
 **Key Variables** (from `.env`):
 - `BACKUP_DIR`: Root directory for backups (e.g., `/var/backups/postgres`)
-- `DB_USER`, `DB_PASSWORD`: Database user for backup execution
+- `USER_FOR_DB_BACKUPS`, `PASSWORD_FOR_DB_BACKUPS`: Database user credentials for backup execution
 - `BACKUP_CRON_SCHEDULE`: Cron schedule (e.g., `0 2 * * *` = 2 AM daily)
 - `PG_CONF`: Path to `postgresql.conf` (requires write access)
 
@@ -270,7 +270,7 @@ python src/historical_csv_data_load.py --csv-dir /path/to/csv/files
 **Post-Upload Validation**:
 ```bash
 # Count rows loaded per symbol
-psql -d "$PGDATABASE" -c "SELECT symbol, COUNT(*) FROM stg_raw.market_data WHERE source = 'CSV_bulk_load' GROUP BY symbol ORDER BY symbol;"
+psql -d "$DB_NAME" -c "SELECT symbol, COUNT(*) FROM stg_raw.market_data WHERE source = 'CSV_bulk_load' GROUP BY symbol ORDER BY symbol;"
 ```
 
 ---
@@ -298,8 +298,8 @@ DATA_DIR="/var/lib/pgsql/16/data"
 ### Backup Configuration
 ```bash
 BACKUP_DIR="/var/backups/postgres"
-DB_USER="postgres"
-DB_PASSWORD="change_me"
+USER_FOR_DB_BACKUPS="postgres"
+PASSWORD_FOR_DB_BACKUPS="change_me"
 BACKUP_CRON_SCHEDULE="0 2 * * *"  # 2 AM UTC daily
 ```
 
@@ -315,13 +315,13 @@ CRON_INSTALL_MODE="user"    # user or system
 CRON_WRAPPER_DIR=".ops/bin" # used in user mode
 ```
 
-### PostgreSQL Connection (inherited from `.env`)
+### Database Connection (inherited from `.env`)
 ```bash
-PGHOST="localhost"
-PGPORT="5432"
-PGDATABASE="market_data"
-PGUSER="etl_user"
-PGPASSWORD="your_password"
+DB_HOST="localhost"
+DB_PORT="5432"
+DB_NAME="market_data"
+DB_USER="etl_user"
+DB_PASSWORD="your_password"
 ```
 
 ---
@@ -364,6 +364,7 @@ python ../src/historical_csv_data_load.py --csv-dir /path/to/csv/files
 | Backup script cannot write | `ls -ld "$BACKUP_DIR"` | Ensure postgres user owns the backup directory: `sudo chown postgres:postgres $BACKUP_DIR` |
 | Cron job doesn't run | `crontab -l` or `sudo cat /etc/cron.d/...` | Verify `CRON_INSTALL_MODE`, wrapper path (`.ops/bin` for user mode), and executable permissions |
 | CSV import fails | Check CSV column names and types | Ensure columns are: `date, open, high, low, close, volume` and all numeric values parse as valid decimals |
+| Timestamps appear shifted to server local time | `psql -c "SHOW TIMEZONE;"` returns an unexpected value | Set DB/session timezone explicitly (commonly UTC): `ALTER DATABASE <db_name> SET TIMEZONE TO 'UTC';`. For display in market time, use `AT TIME ZONE 'America/New_York'`. |
 | Permission denied on user creation | Check `/etc/sudoers` | Only run `setup_server.sh` as root or with sudo; don't use it in a restricted shell |
 
 ---
