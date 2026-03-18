@@ -1,4 +1,74 @@
 #!/bin/bash
+# ============================================================================
+# Physical Streaming Replication Setup
+# ============================================================================
+#
+# Purpose:
+#     Configure PostgreSQL physical streaming replication from a primary server
+#     to a local standby/replica server. Enables HA, disaster recovery, and failover.
+#
+# Intended Use:
+#     One-time setup during initial server provisioning. Called by setup_server.sh.
+#     Sets up the local instance as a read-only replica following the primary.
+#
+# Prerequisites:
+#     - SSH access to primary server (REPLICATION_USER with password)
+#     - PostgreSQL 16 installed on both primary and local server
+#     - Local PostgreSQL 16 must be stopped before running (data directory will be wiped)
+#     - .env file with PRIMARY_IP, PRIMARY_USER, REPLICATION_USER, REPLICATION_PASSWORD, etc.
+#     - Sufficient disk space for base backup on local system
+#
+# What It Does:
+#     Phase 1 (Remote Primary):
+#         1. Enable listening on all interfaces (listen_addresses = '*')
+#         2. Add replication permission to pg_hba.conf
+#         3. Create replication role with password
+#         4. Create physical replication slot (for WAL retention on primary)
+#         5. Restart PostgreSQL to apply changes
+#
+#     Phase 2 (Local Standby):
+#         1. Set up .pgpass for credential-less replication
+#         2. Stop local PostgreSQL 16 service
+#         3. Clear local data directory (/var/lib/pgsql/16/data)
+#         4. Run pg_basebackup from primary with streaming (-R flag includes recovery config)
+#         5. Verify filesystem is ready and standby is in recovery mode
+#
+# Environment Variables (from .env):
+#     PRIMARY_USER: SSH user on primary (usually 'postgres')
+#     PRIMARY_IP: IP hostname of primary server
+#     PG_CONF: Full path to primary's postgresql.conf
+#     PG_HBA: Full path to primary's pg_hba.conf
+#     REPLICATION_USER: Role name for replication
+#     REPLICATION_PASSWORD: Password for replication role
+#     SLOT_NAME: Physical replication slot name (e.g., 'replica_slot_1')
+#     DATA_DIR: Local PostgreSQL data directory (e.g., '/var/lib/pgsql/16/data')
+#
+# Side Effects:
+#     ⚠️  DESTRUCTIVE - Wipes local PostgreSQL data directory
+#     - Restarts PostgreSQL on both primary and local
+#     - Modifies postgresql.conf and pg_hba.conf on primary (appends lines)
+#     - Creates .pgpass file in postgres home directory
+#
+# Post-Setup Validation:
+#     # On standby, verify it's in recovery:
+#     sudo -u postgres psql -c "SELECT pg_is_in_recovery();"
+#     > t (true = standby is ready)
+#
+#     # On primary, verify slot exists:
+#     psql -c "SELECT slot_name, active FROM pg_replication_slots WHERE slot_name = 'SLOT_NAME';"
+#     > slot_name | active
+#     > SLOT_NAME | t
+#
+# Rollback/Recovery:
+#     If setup fails partway:
+#     1. Restore local data directory from backup
+#     2. Fix the error on primary (check pg_hba.conf, REPLICATION_USER permissions)
+#     3. Re-run this script to retry the full setup
+#
+# Author: Data Collection Team
+# License: MIT
+# ============================================================================
+
 set -e
 
 # This script sets up a Physical Streaming Replication (PSR) system for the postgres16 database.

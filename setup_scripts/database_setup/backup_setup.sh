@@ -1,11 +1,89 @@
 #!/bin/bash
+# ============================================================================
+# PostgreSQL Backup Configuration
+# ============================================================================
+#
+# Purpose:
+#     Configure automated PostgreSQL base backups with WAL archiving for
+#     Point-In-Time Recovery (PITR). Enables disaster recovery workflows.
+#
+# Intended Use:
+#     One-time setup during initial server provisioning. Called by setup_server.sh.
+#     Schedules recurring backups via cron and enables WAL archiving.
+#
+# Prerequisites:
+#     - PostgreSQL 16 installed and running
+#     - Backup directory must be writable by postgres user
+#     - Sufficient disk space for multiple base backups
+#     - WAL archiving enabled (wal_level = replica)
+#     - .env file with BACKUP_DIR, USER_FOR_DB_BACKUPS, PASSWORD_FOR_DB_BACKUPS, BACKUP_CRON_SCHEDULE
+#
+# What It Does:
+#     1. Creates BACKUP_DIR and WAL archive subdirectory
+#     2. Enables archive mode in postgresql.conf:
+#        - Sets wal_level = replica
+#        - Sets archive_mode = on
+#        - Configures archive_command to copy WAL files
+#     3. Creates initial base backup using pg_basebackup
+#     4. Generates automated backup script at /usr/local/bin/backup_database.sh
+#     5. Schedules backup cron job in /etc/cron.d/postgres_backup
+#
+# Environment Variables (from .env):
+#     BACKUP_DIR: Root directory for backups (e.g., '/var/backups/postgres')
+#     USER_FOR_DB_BACKUPS: Database user for backup execution (usually 'postgres')
+#     PASSWORD_FOR_DB_BACKUPS: Password for USER_FOR_DB_BACKUPS
+#     BACKUP_CRON_SCHEDULE: Cron schedule (e.g., '0 2 * * *' = 2 AM daily)
+#     PG_CONF: Full path to postgresql.conf
+#
+# Output:
+#     - Base backup in BACKUP_DIR/base_backup/ (timestamped subdirectory)
+#     - WAL archives in BACKUP_DIR/wal_archives/ (auto-maintained)
+#     - Backup script at /usr/local/bin/backup_database.sh
+#     - Cron job in /etc/cron.d/postgres_backup
+#
+# Side Effects:
+#     - Modifies postgresql.conf (appends wal_level, archive_mode, archive_command)
+#     - Restarts PostgreSQL to apply archive_mode changes
+#     - Creates large files in BACKUP_DIR (size = database size)
+#     - Runs pg_basebackup which can impact database performance
+#
+# Retention Policy:
+#     The script does NOT manage retention. Old backups must be manually cleaned up
+#     or deleted based on your recovery window requirements. Example cleanup:
+#       find "$BACKUP_DIR/base_backup" -type d -mtime +30 -exec rm -rf {} \;
+#
+# Recovery:
+#     To restore from backup:
+#     1. Stop PostgreSQL
+#     2. Clear data directory
+#     3. Extract base backup: tar xzf base_backup/...tar.gz -C /var/lib/pgsql/16/data
+#     4. Copy recovery config from backup to data directory
+#     5. Start PostgreSQL (will replay WAL archives to point-in-time)
+#
+# Post-Setup Validation:
+#     # Check archive mode is on:
+#     sudo -u postgres psql -c "SHOW archive_mode;"
+#     > on
+#
+#     # Check base backup was created:
+#     ls -lh "$BACKUP_DIR/base_backup/"
+#     > (should see timestamped tar.gz file)
+#
+#     # Check cron job is registered:
+#     sudo crontab -l | grep backup_database
+#     > (should see one line)
+#
+# Author: Data Collection Team
+# License: MIT
+# ============================================================================
+
 set -e
 
 # This script sets up a backup system for the postgres16 database.
 # It creates a backup directory, sets permissions, and schedules a cron job for regular backups.
 
 # Define variables from .env file: source the .env file to get the necessary variables
-ENV_FILE="../.env"
+ENV_FILE="../../.env"
 if [ -f "$ENV_FILE" ]; then
     set -a
     . "$ENV_FILE"
@@ -54,8 +132,8 @@ if [ ! -d "$BACKUP_DIR/base_backup" ]; then
     mkdir -p "$BACKUP_DIR/base_backup"
     chown -R postgres:postgres "$BACKUP_DIR/base_backup"
     # Perform base backup using pg_basebackup as postgres user
-    export PGPASSWORD="$DB_PASSWORD"
-    sudo -u postgres pg_basebackup -h localhost -D "$BACKUP_DIR/base_backup" -U "$DB_USER" -P -v -Ft -z
+    export PGPASSWORD="$PASSWORD_FOR_DB_BACKUPS"
+    sudo -u postgres pg_basebackup -h localhost -D "$BACKUP_DIR/base_backup" -U "$USER_FOR_DB_BACKUPS" -P -v -Ft -z
     echo "Created base backup at $BACKUP_DIR/base_backup"
 else
     echo "Base backup directory already exists at $BACKUP_DIR/base_backup"
@@ -74,11 +152,11 @@ export PATH=$PATH:/usr/pgsql-16/bin
 
 TIMESTAMP=\$(date +"%F_%H-%M-%S")
 BACKUP_DIR="$BACKUP_DIR"
-DB_USER="$DB_USER"
-export PGPASSWORD="$DB_PASSWORD"
+USER_FOR_DB_BACKUPS="$USER_FOR_DB_BACKUPS"
+export PGPASSWORD="$PASSWORD_FOR_DB_BACKUPS"
 
 # Perform base backup using pg_basebackup as postgres user
-pg_basebackup -h localhost -U "$DB_USER" -D "$BACKUP_DIR/base_backup_\$TIMESTAMP" -Ft -z
+pg_basebackup -h localhost -U "$USER_FOR_DB_BACKUPS" -D "$BACKUP_DIR/base_backup_\$TIMESTAMP" -Ft -z
 
 # Remove backups older than 7 days
 find "$BACKUP_DIR" -maxdepth 1 -type d -name "base_backup_*" -daystart -mtime +7 -exec rm -rf {} +

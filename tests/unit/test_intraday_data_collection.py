@@ -3,9 +3,32 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from src import intraday_data_collection as collector
-from src import time_utils as tu
-from models import MarketData
+import intraday_data_collection as collector
+from src.model.models import MarketData
+from utils import time_utils as tu
+
+
+def _run_batch(
+    api_payload,
+    start,
+    end,
+    tz,
+    symbol="AAPL",
+    source_url="FMP_intraday",
+    now_local=None,
+):
+    if now_local is None:
+        now_local = dt.datetime(2026, 1, 26, 10, 30, tzinfo=tz)
+    return collector._process_data_batch(
+        api_payload,
+        symbol,
+        collector.STAGING_TABLE_NAME,
+        source_url,
+        start,
+        end,
+        now_local,
+        tz,
+    )
 
 
 def test_ymd_format():
@@ -52,15 +75,7 @@ def test_process_data_batch_excludes_out_of_range_rows():
         {"date": "2026-01-26 09:55:00", "open": 1, "high": 2, "low": 1, "close": 1.5, "volume": 10},
     ]
 
-    collector.TZ = tz
-
-    rows = collector._process_data_batch(
-        api_payload,
-        "AAPL",
-        start,
-        end,
-        dt.datetime(2026, 1, 26, 10, 30, tzinfo=tz),
-    )
+    rows = _run_batch(api_payload, start, end, tz)
 
     assert len(rows) == 0
 
@@ -74,15 +89,7 @@ def test_process_data_batch_allows_missing_close(mock_error_log_dir):
         {"date": "2026-01-26 10:05:00", "open": 1, "high": 2, "low": 1, "close": None, "volume": 10},
     ]
 
-    collector.TZ = tz
-
-    rows = collector._process_data_batch(
-        api_payload,
-        "AAPL",
-        start,
-        end,
-        dt.datetime(2026, 1, 26, 10, 30, tzinfo=tz),
-    )
+    rows = _run_batch(api_payload, start, end, tz)
 
     assert len(rows) == 1
     assert isinstance(rows[0], MarketData)
@@ -100,15 +107,7 @@ def test_process_data_batch_sorts_by_ts():
         {"date": "2026-01-26 10:05:00", "open": 1, "high": 2, "low": 1, "close": 1.5, "volume": 10},
     ]
 
-    collector.TZ = tz
-
-    rows = collector._process_data_batch(
-        api_payload,
-        "AAPL",
-        start,
-        end,
-        dt.datetime(2026, 1, 26, 10, 30, tzinfo=tz),
-    )
+    rows = _run_batch(api_payload, start, end, tz)
 
     assert len(rows) == 2
     assert rows[0].symbol == "AAPL"
@@ -126,14 +125,12 @@ def test_process_data_batch_infers_missing_date_field(mock_error_log_dir):
         {"open": 1, "high": 2, "low": 1, "close": 1.5, "volume": 10},
     ]
 
-    collector.TZ = tz
-
-    rows = collector._process_data_batch(
+    rows = _run_batch(
         api_payload,
-        "AAPL",
         start,
         end,
-        dt.datetime(2026, 1, 26, 10, 30, tzinfo=tz),
+        tz,
+        now_local=dt.datetime(2026, 1, 26, 10, 30, tzinfo=tz),
     )
 
     assert len(rows) == 1
@@ -150,15 +147,7 @@ def test_process_data_batch_handles_empty_api_response():
 
     api_payload = []
 
-    collector.TZ = tz
-
-    rows = collector._process_data_batch(
-        api_payload,
-        "AAPL",
-        start,
-        end,
-        dt.datetime(2026, 1, 26, 10, 30, tzinfo=tz),
-    )
+    rows = _run_batch(api_payload, start, end, tz)
 
     assert len(rows) == 0
 
@@ -174,15 +163,7 @@ def test_process_data_batch_inserts_rows_with_missing_fields(mock_error_log_dir)
         {"open": 1, "high": 2, "low": 1, "close": 1.5, "volume": 10},
     ]
 
-    collector.TZ = tz
-
-    rows = collector._process_data_batch(
-        api_payload,
-        "AAPL",
-        start,
-        end,
-        dt.datetime(2026, 1, 26, 10, 30, tzinfo=tz),
-    )
+    rows = _run_batch(api_payload, start, end, tz, source_url="FMP_intraday")
 
     assert len(rows) >= 1
     assert len(rows) <= 2
@@ -190,7 +171,7 @@ def test_process_data_batch_inserts_rows_with_missing_fields(mock_error_log_dir)
         assert isinstance(row, MarketData)
         assert row.symbol == "AAPL"
         assert row.source == "FMP_intraday"
-        assert row.asset_type == collector.ASSET_TYPE
+        assert row.asset_type == "stock"
 
 
 def test_process_data_batch_rejects_invalid_and_logs_load_errors(mock_error_log_dir):
@@ -205,15 +186,7 @@ def test_process_data_batch_rejects_invalid_and_logs_load_errors(mock_error_log_
         {"date": "2026-01-26 10:05:00", "open": 1.2, "high": 2.2, "low": 1.2, "close": 1.7, "volume": 12},
     ]
 
-    collector.TZ = tz
-
-    rows = collector._process_data_batch(
-        api_payload,
-        "AAPL",
-        start,
-        end,
-        dt.datetime(2026, 1, 26, 10, 30, tzinfo=tz),
-    )
+    rows = _run_batch(api_payload, start, end, tz)
 
     assert len(rows) == 1
     assert rows[0].symbol == "AAPL"
@@ -235,15 +208,7 @@ def test_process_data_batch_logs_duplicate_timestamps(mock_error_log_dir):
         {"date": "2026-01-26 10:05:00", "open": 1.2, "high": 2.2, "low": 1.2, "close": 1.7, "volume": 12},
     ]
 
-    collector.TZ = tz
-
-    rows = collector._process_data_batch(
-        api_payload,
-        "AAPL",
-        start,
-        end,
-        dt.datetime(2026, 1, 26, 10, 30, tzinfo=tz),
-    )
+    rows = _run_batch(api_payload, start, end, tz)
 
     assert len(rows) == 1
     assert rows[0].symbol == "AAPL"
@@ -266,15 +231,7 @@ def test_process_data_batch_logs_schema_type_mismatch(mock_error_log_dir):
         {"open": 1.0, "high": 2.0, "low": 1.0, "close": 1.5, "volume": 10},
     ]
 
-    collector.TZ = tz
-
-    rows = collector._process_data_batch(
-        api_payload,
-        "AAPL",
-        start,
-        end,
-        dt.datetime(2026, 1, 26, 10, 30, tzinfo=tz),
-    )
+    rows = _run_batch(api_payload, start, end, tz)
 
     assert len(rows) == 0
 
@@ -283,14 +240,3 @@ def test_process_data_batch_logs_schema_type_mismatch(mock_error_log_dir):
     lines = log_file.read_text(encoding="utf-8").splitlines()
     assert len(lines) == 4
     assert all("AAPL" in line for line in lines[1:])
-
-
-@pytest.fixture(autouse=True)
-def restore_collector_globals():
-    original_api_key = collector.API_KEY
-    original_base_url = collector.BASE_URL
-    original_tz = collector.TZ
-    yield
-    collector.API_KEY = original_api_key
-    collector.BASE_URL = original_base_url
-    collector.TZ = original_tz

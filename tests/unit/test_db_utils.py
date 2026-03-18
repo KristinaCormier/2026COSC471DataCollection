@@ -1,6 +1,6 @@
 import pytest
 
-from src import db_utils as dbu
+from utils import db_utils as dbu
 
 
 def test_safe_table_name_for_symbol_basic():

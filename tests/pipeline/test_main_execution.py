@@ -8,7 +8,7 @@ import pytest
 from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
-from src import intraday_data_collection as collector
+import intraday_data_collection as collector
 from tests.conftest import FakeResponse
 
 
@@ -19,11 +19,11 @@ def mock_env_complete(monkeypatch):
     monkeypatch.setenv("SYMBOLS", "AAPL,MSFT")
     monkeypatch.setenv("MARKET_TZ", "America/New_York")
     monkeypatch.setenv("WINDOW_MINUTES", "5")
-    monkeypatch.setenv("PGHOST", "localhost")
-    monkeypatch.setenv("PGPORT", "5432")
-    monkeypatch.setenv("PGDATABASE", "test_db")
-    monkeypatch.setenv("PGUSER", "test_user")
-    monkeypatch.setenv("PGPASSWORD", "test_pass")
+    monkeypatch.setenv("DB_HOST", "localhost")
+    monkeypatch.setenv("DB_PORT", "5432")
+    monkeypatch.setenv("DB_NAME", "test_db")
+    monkeypatch.setenv("DB_USER", "test_user")
+    monkeypatch.setenv("DB_PASSWORD", "test_pass")
 
 
 @pytest.fixture
@@ -86,7 +86,7 @@ class FakeSession:
 def test_main_exits_when_api_key_missing(mock_market_hours_time, monkeypatch, capsys, mock_error_log_dir):
     monkeypatch.setenv("FMP_API_KEY", "")
     monkeypatch.setenv("SYMBOLS", "AAPL")
-    monkeypatch.setenv("PGPORT", "5432")
+    monkeypatch.setenv("DB_PORT", "5432")
 
     with pytest.raises(SystemExit) as exc_info:
         collector.main()
@@ -110,7 +110,7 @@ def test_main_exits_when_db_connection_fails(mock_market_hours_time, mock_env_co
     assert exc_info.value.code == 2
 
     captured = capsys.readouterr()
-    assert "cannot connect to Postgres" in captured.err
+    assert "cannot connect to database" in captured.err
 
 
 @pytest.mark.pipeline
@@ -135,7 +135,7 @@ def test_main_continues_after_symbol_error(mock_market_hours_time, mock_env_comp
     fake_session = FakeSession()
     call_count = {"count": 0}
 
-    def mock_fetch_api_data(symbol, start, end):
+    def mock_fetch_api_data(symbol, start, end, api_key, tz):
         call_count["count"] += 1
         if symbol == "AAPL":
             raise Exception("API rate limit exceeded")
@@ -161,24 +161,23 @@ def test_main_loads_env_vars_at_runtime(mock_market_hours_time, monkeypatch, cap
     monkeypatch.setenv("SYMBOLS", "GOOGL")
     monkeypatch.setenv("MARKET_TZ", "America/Chicago")
     monkeypatch.setenv("WINDOW_MINUTES", "30")
-    monkeypatch.setenv("PGHOST", "testhost")
-    monkeypatch.setenv("PGPORT", "5433")
-    monkeypatch.setenv("PGDATABASE", "runtime_db")
-    monkeypatch.setenv("PGUSER", "runtime_user")
-    monkeypatch.setenv("PGPASSWORD", "runtime_pass")
+    monkeypatch.setenv("DB_HOST", "testhost")
+    monkeypatch.setenv("DB_PORT", "5433")
+    monkeypatch.setenv("DB_NAME", "runtime_db")
+    monkeypatch.setenv("DB_USER", "runtime_user")
+    monkeypatch.setenv("DB_PASSWORD", "runtime_pass")
 
     fake_session = FakeSession()
 
     def mock_get_engine(host, port, dbname, user, password):
-        assert collector.API_KEY == "runtime_key"
-        assert collector.SYMBOLS == ["GOOGL"]
-        assert collector.MARKET_TZ == "America/Chicago"
-        assert collector.WINDOW_MIN == 30
-        assert collector.PGHOST == "testhost"
-        assert collector.PGPORT == 5433
+        assert host == "testhost"
+        assert port == 5433
+        assert dbname == "runtime_db"
+        assert user == "runtime_user"
         return object()
 
-    def mock_fetch_api_data(symbol, start, end):
+    def mock_fetch_api_data(symbol, start, end, api_key, tz):
+        assert api_key == "runtime_key"
         return []
 
     monkeypatch.setattr(collector, "get_engine", mock_get_engine)
@@ -197,7 +196,7 @@ def test_main_computes_time_window(mock_market_hours_time, mock_env_complete, mo
     fake_session = FakeSession()
     captured_window = {"start": None, "end": None}
 
-    def mock_fetch_api_data(symbol, start, end):
+    def mock_fetch_api_data(symbol, start, end, api_key, tz):
         captured_window["start"] = start
         captured_window["end"] = end
         return []

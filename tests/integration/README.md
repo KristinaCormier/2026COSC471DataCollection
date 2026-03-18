@@ -1,7 +1,7 @@
 ## Purpose
-Integration tests validate interactions with Postgres and other external
-systems (e.g., data warehouse). These may be slower and require a test DB.
+Integration tests validate interactions with PostgreSQL, ORM models, and database
+operations for the collection and transformation pipeline. Requires a test database.
 
 ## Examples
-- CRUD against Postgres tables
-- Warehouse query sanity checks
+- ORM model operations (MarketData, MarketData5m, error tables)
+- Staging-to-core data transformations and SQL operations

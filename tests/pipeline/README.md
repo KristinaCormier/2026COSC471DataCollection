@@ -1,7 +1,7 @@
 ## Purpose
-Pipeline tests validate end‑to‑end workflows such as ETL → feature generation →
-model training → prediction.
+Pipeline tests validate end‑to‑end collection and transformation workflows from API
+ingestion through staging to core warehouse, with full deduplication and quality checks.
 
 ## Examples
-- Full training pipeline smoke tests
-- Inference pipeline on a small fixture dataset
+- Full intraday collection → stg_raw → core_dbms workflow
+- Deduplication and data quality validation under collection scenarios

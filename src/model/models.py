@@ -1,22 +1,66 @@
+"""
+SQLAlchemy ORM Models for Data Pipeline
+
+Purpose:
+    Define declarative ORM models for all database tables across the three-layer schema:
+    - stg_raw: Staging layer for raw API ingest
+    - core_dbms: Core warehouse layer for validated, deduplicated data
+    - operation_logs: Audit and error tracking
+
+Tables:
+    Staging Layer (stg_raw):
+        - MarketData: Raw 5-minute bars from API (symbol, ts, OHLCV, raw JSON)
+        - IngestError: Failed API calls, validation errors
+
+    Core Layer (core_dbms):
+        - MarketData5m: Quality-checked, deduplicated 5-minute bars
+
+    Operations Layer (operation_logs):
+        - AuthorityConflict: Source conflicts (for multi-source scenarios)
+        - BackupLog: Backup/restore event history
+        - CastError: Type conversion failures
+        - DeduplicationConflict: Rows discarded as duplicates
+        - DataQualityError: Rows rejected for data quality issues
+        - PipelineLog: Script execution status and results
+
+Design:
+    - All tables use timezone-aware DateTime columns (UTC stored, but TZ aware in Python objects)
+    - Unique constraints are field-specific (e.g., UNIQUE(symbol, ts) on market_data)
+    - Foreign keys are not enforced to keep staging layer flexible
+    - JSONB columns preserve raw API payload for debugging
+
+Author: Data Collection Team
+License: MIT
+"""
+
 from __future__ import annotations
 
 import datetime as dt
+import sys
 from decimal import Decimal
 from typing import Any, Dict, Optional
 
 from sqlalchemy import (
     BigInteger,
+    CheckConstraint,
     DateTime,
     Numeric,
     Integer,
     Date,
-    JSON,
+    Index,
     Text,
     UniqueConstraint,
     text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+# Keep a single module object regardless of whether callers import
+# `model.models` (runtime path) or `src.model.models` (package path).
+if __name__ == "model.models":
+    sys.modules.setdefault("src.model.models", sys.modules[__name__])
+elif __name__ == "src.model.models":
+    sys.modules.setdefault("model.models", sys.modules[__name__])
 
 class Base(DeclarativeBase):
     pass
@@ -27,6 +71,8 @@ class MarketData(Base):
 
     __table_args__ = (
         UniqueConstraint("symbol", "ts", name="unique_symbol_ts_source"),
+        Index("idx_stg_raw_symbol_ts", "symbol", "ts"),
+        Index("idx_stg_raw_ingest_time", "ingest_time"),
         {"schema": "stg_raw"},
     )
 
@@ -128,10 +174,10 @@ class MarketData5m(Base):
         nullable=False,
     )
 
-    open: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 6))
-    high: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 6))
-    low: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 6))
-    close: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 6))
+    open: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
+    high: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
+    low: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
+    close: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
 
     volume: Mapped[int] = mapped_column(BigInteger, nullable=False)
 
@@ -295,9 +341,9 @@ class DedupConflict(Base):
         DateTime(timezone=True)
     )
 
-    existing_row: Mapped[Optional[dict]] = mapped_column(JSON)
+    existing_row: Mapped[Optional[dict]] = mapped_column(JSONB)
 
-    incoming_row: Mapped[Optional[dict]] = mapped_column(JSON)
+    incoming_row: Mapped[Optional[dict]] = mapped_column(JSONB)
 
     resolution: Mapped[Optional[str]] = mapped_column(Text)
 
@@ -337,7 +383,14 @@ class IngestionLog(Base):
 
 class PipelineLog(Base):
     __tablename__ = "pipeline_logs"
-    __table_args__ = {"schema": "operation_logs"}
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('running', 'success', 'failed', 'warning')",
+            name="chk_pipeline_logs_status",
+        ),
+        Index("idx_pipeline_logs_stage_time", "pipeline_stage", text("created_at DESC")),
+        {"schema": "operation_logs"},
+    )
 
     log_id: Mapped[int] = mapped_column(
         BigInteger,
@@ -403,6 +456,30 @@ class UpsertFailure(Base):
         DateTime(timezone=True),
         server_default=text("now()"),
     )
+
+
+class TransformMarketData(Base):
+    __tablename__ = "market_data"
+    __table_args__ = {"schema": "stg_transform"}
+
+    symbol: Mapped[str] = mapped_column(Text, primary_key=True)
+
+    ts: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True),
+        primary_key=True,
+    )
+
+    open: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 6))
+
+    high: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 6))
+
+    low: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 6))
+
+    close: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 6))
+
+    volume: Mapped[Optional[int]] = mapped_column(BigInteger)
+
+    vwap: Mapped[Optional[Decimal]] = mapped_column(Numeric(20, 6))
 
 
 class TransformError(Base):

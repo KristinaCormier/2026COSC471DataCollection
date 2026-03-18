@@ -3,6 +3,6 @@ Unit tests cover pure logic with no database, network, or filesystem I/O. These
 should be fast and deterministic.
 
 ## Examples
-- Feature engineering helpers
-- Data normalization utilities
-- Model metric calculations
+- Date/time window calculations (5-minute bars, market hour clamping)
+- OHLCV data validation and field completeness checks
+- Data type parsing and coercion utilities
