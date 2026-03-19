@@ -1,6 +1,5 @@
 import datetime as dt
 import runpy
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -356,18 +355,6 @@ def test_configure_logging_raises_permission_error(tmp_path, monkeypatch):
     read_only_dir.mkdir()
     read_only_dir.chmod(0o555)
     monkeypatch.setattr(mod, "LOG_DIR", read_only_dir)
-
-    original_stat = Path.stat
-
-    def fake_stat(path_obj):
-        if path_obj == read_only_dir:
-            class _Stat:
-                st_mode = 0o555
-
-            return _Stat()
-        return original_stat(path_obj)
-
-    monkeypatch.setattr(Path, "stat", fake_stat)
 
     try:
         with pytest.raises(PermissionError):
