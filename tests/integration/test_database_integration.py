@@ -106,13 +106,12 @@ def test_check_table_exists_passes_for_existing_table(db_engine):
 # Test 5: current_hour() returns top of the hour
 def test_current_hour_returns_top_of_hour():
     # Given: a timezone-aware timestamp with non-zero minute/second/microsecond values.
+    # When: normalizing it with `current_hour`.
+    # Then: the same hour is returned with minute/second/microsecond zeroed.
+
     tz = ZoneInfo("America/New_York")
     now = dt.datetime(2026, 1, 26, 15, 47, 32, 123456, tzinfo=tz)
-    
-    # When: normalizing it with `current_hour`.
     result = tu.current_hour(now)
-    
-    # Then: the same hour is returned with minute/second/microsecond zeroed.
     assert result.year == 2026
     assert result.month == 1
     assert result.day == 26

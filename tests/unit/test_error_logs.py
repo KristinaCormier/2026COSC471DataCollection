@@ -192,7 +192,6 @@ def test_all_error_logs_use_iso_timestamps(mock_error_log_dir):
 
 
 def test_error_log_directory_validation_creates_missing_directory(tmp_path):
-    """Test that _validate_log_dir creates a missing directory."""
     # Given: a nested log directory path that does not exist.
     # When: validating it with `_validate_log_dir`.
     # Then: the directory is created and available for writes.
@@ -209,7 +208,6 @@ def test_error_log_directory_validation_creates_missing_directory(tmp_path):
 
 
 def test_error_log_directory_validation_succeeds_if_exists_and_writable(mock_error_log_dir):
-    """Test that _validate_log_dir succeeds for writable directory."""
     # Given: an existing writable log directory fixture.
     # When: validating it with `_validate_log_dir`.
     # Then: no exception is raised.
@@ -221,7 +219,6 @@ def test_error_log_directory_validation_succeeds_if_exists_and_writable(mock_err
 
 
 def test_error_log_file_creation_creates_missing_parent_directory(tmp_path):
-    """Test that _ensure_log_file creates a missing parent directory."""
     # Given: a log file path whose parent directories do not exist.
     # When: calling `_ensure_log_file` with required header fields.
     # Then: parent directories are created and the file exists.

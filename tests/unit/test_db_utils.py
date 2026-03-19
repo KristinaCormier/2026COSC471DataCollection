@@ -7,24 +7,22 @@ pytestmark = pytest.mark.unit
 
 
 def test_safe_table_name_for_symbol_basic():
-    # Given: A valid stock symbol in uppercase
+    # Given: a valid uppercase stock symbol.
+    # When: converting it with `safe_table_name_for_symbol`.
+    # Then: the resulting table name is lowercase and schema-qualified under `market`.
+
     symbol = "AAPL"
-
-    # When: Converting the symbol to a safe table name
     result = dbu.safe_table_name_for_symbol(symbol)
-
-    # Then: The result should be lowercase with market schema prefix
     assert result == "market.aapl"
 
 
 def test_safe_table_name_for_symbol_strips_non_alnum():
-    # Given: A symbol with non-alphanumeric characters
+    # Given: a symbol that includes non-alphanumeric prefix characters.
+    # When: converting it with `safe_table_name_for_symbol`.
+    # Then: invalid characters are stripped before schema-qualified table naming.
+
     symbol = "^TNX"
-
-    # When: Converting the symbol to a safe table name
     result = dbu.safe_table_name_for_symbol(symbol)
-
-    # Then: Non-alphanumeric characters should be stripped
     assert result == "market.tnx"
 
 
