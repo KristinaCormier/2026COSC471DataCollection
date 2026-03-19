@@ -15,12 +15,20 @@ pytestmark = [pytest.mark.unit, pytest.mark.postgres_only]
 
 
 def test_market_data_includes_staging_indexes():
+    # Given: the `MarketData` ORM table definition.
+    # When: collecting declared index names from its SQLAlchemy metadata.
+    # Then: both staging indexes (`symbol, ts` and `ingest_time`) are present.
+
     index_names = {index.name for index in MarketData.__table__.indexes}
     assert "idx_stg_raw_symbol_ts" in index_names
     assert "idx_stg_raw_ingest_time" in index_names
 
 
 def test_market_data_5m_ohlc_columns_are_not_nullable():
+    # Given: the `MarketData5m` ORM table metadata.
+    # When: inspecting nullability on OHLC columns.
+    # Then: `open`, `high`, `low`, and `close` are all non-nullable.
+
     table = MarketData5m.__table__
     assert table.c.open.nullable is False
     assert table.c.high.nullable is False
@@ -29,6 +37,10 @@ def test_market_data_5m_ohlc_columns_are_not_nullable():
 
 
 def test_pipeline_log_has_status_check_constraint_and_index():
+    # Given: the `PipelineLog` ORM table metadata.
+    # When: reading check constraints and indexes defined on that table.
+    # Then: the allowed status constraint and stage/time index both exist.
+
     table = PipelineLog.__table__
 
     check_constraints = [
@@ -55,12 +67,20 @@ def test_pipeline_log_has_status_check_constraint_and_index():
 
 
 def test_dedup_conflict_rows_use_jsonb_columns():
+    # Given: the `DedupConflict` ORM table definition.
+    # When: inspecting the SQLAlchemy types for `existing_row` and `incoming_row`.
+    # Then: both columns are typed as PostgreSQL JSONB.
+
     table = DedupConflict.__table__
     assert isinstance(table.c.existing_row.type, JSONB)
     assert isinstance(table.c.incoming_row.type, JSONB)
 
 
 def test_transform_market_data_model_matches_composite_primary_key_shape():
+    # Given: the `TransformMarketData` ORM table metadata.
+    # When: checking schema/table identity and primary key columns.
+    # Then: it maps to `stg_transform.market_data` with composite key `(symbol, ts)`.
+
     table = TransformMarketData.__table__
     assert table.schema == "stg_transform"
     assert table.name == "market_data"

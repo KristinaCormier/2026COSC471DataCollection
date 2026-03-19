@@ -32,12 +32,20 @@ def _run_batch(
 
 
 def test_ymd_format():
+    # Given: a concrete `datetime.date` value.
+    # When: formatting it with `ymd`.
+    # Then: the result uses `YYYY-MM-DD` string format.
+
     date = dt.date(2026, 1, 26)
     result = tu.ymd(date)
     assert result == "2026-01-26"
 
 
 def test_compute_window_aligns_to_5_minute_boundary_and_is_valid():
+    # Given: a timezone-aware current time not already aligned to a 5-minute boundary.
+    # When: computing the collection window with `compute_window`.
+    # Then: start/end align to 5-minute boundaries and span exactly 5 minutes.
+
     tz = ZoneInfo("America/New_York")
     now = dt.datetime(2026, 1, 26, 15, 27, 42, tzinfo=tz)
     window_min = 60
@@ -55,6 +63,10 @@ def test_compute_window_aligns_to_5_minute_boundary_and_is_valid():
 
 
 def test_parse_api_time_uses_market_tz():
+    # Given: an API timestamp string and target market timezone.
+    # When: parsing with `parse_api_time`.
+    # Then: resulting datetime keeps the market timezone and expected clock time.
+
     tz = ZoneInfo("America/New_York")
     ts_str = "2026-01-26 10:05:00"
 
@@ -66,6 +78,10 @@ def test_parse_api_time_uses_market_tz():
 
 
 def test_process_data_batch_excludes_out_of_range_rows():
+    # Given: payload rows whose timestamp falls outside the requested window.
+    # When: processing with `_process_data_batch`.
+    # Then: no rows are returned for insertion.
+
     tz = ZoneInfo("America/New_York")
 
     start = dt.datetime(2026, 1, 26, 10, 0, tzinfo=tz)
@@ -81,6 +97,10 @@ def test_process_data_batch_excludes_out_of_range_rows():
 
 
 def test_process_data_batch_allows_missing_close(mock_error_log_dir):
+    # Given: a valid in-range payload row where `close` is missing.
+    # When: processing the batch.
+    # Then: the row is still accepted into staging with `close=None`.
+
     tz = ZoneInfo("America/New_York")
     start = dt.datetime(2026, 1, 26, 10, 0, tzinfo=tz)
     end = dt.datetime(2026, 1, 26, 10, 30, tzinfo=tz)
@@ -98,6 +118,10 @@ def test_process_data_batch_allows_missing_close(mock_error_log_dir):
 
 
 def test_process_data_batch_sorts_by_ts():
+    # Given: two in-range payload rows provided out of chronological order.
+    # When: processing the batch.
+    # Then: output rows are sorted ascending by timestamp.
+
     tz = ZoneInfo("America/New_York")
     start = dt.datetime(2026, 1, 26, 10, 0, tzinfo=tz)
     end = dt.datetime(2026, 1, 26, 10, 30, tzinfo=tz)
@@ -117,6 +141,10 @@ def test_process_data_batch_sorts_by_ts():
 
 
 def test_process_data_batch_infers_missing_date_field(mock_error_log_dir):
+    # Given: a payload row without `date` plus a deterministic `now_local` reference.
+    # When: running `_process_data_batch`.
+    # Then: the timestamp is inferred and a valid timezone-aware `MarketData` row is produced.
+
     tz = ZoneInfo("America/New_York")
     start = dt.datetime(2026, 1, 26, 10, 0, tzinfo=tz)
     end = dt.datetime(2026, 1, 26, 10, 35, tzinfo=tz)
@@ -141,6 +169,10 @@ def test_process_data_batch_infers_missing_date_field(mock_error_log_dir):
 
 
 def test_process_data_batch_handles_empty_api_response():
+    # Given: an empty API response payload.
+    # When: processing through `_process_data_batch`.
+    # Then: no staging rows are created.
+
     tz = ZoneInfo("America/New_York")
     start = dt.datetime(2026, 1, 26, 10, 0, tzinfo=tz)
     end = dt.datetime(2026, 1, 26, 10, 30, tzinfo=tz)
@@ -153,6 +185,10 @@ def test_process_data_batch_handles_empty_api_response():
 
 
 def test_process_data_batch_inserts_rows_with_missing_fields(mock_error_log_dir):
+    # Given: mixed payload rows (out-of-window, missing close, missing date).
+    # When: processing the batch with normal source metadata.
+    # Then: valid/inferable rows are returned as `MarketData` objects with expected defaults.
+
     tz = ZoneInfo("America/New_York")
     start = dt.datetime(2026, 1, 26, 10, 0, tzinfo=tz)
     end = dt.datetime(2026, 1, 26, 10, 30, tzinfo=tz)
@@ -175,6 +211,10 @@ def test_process_data_batch_inserts_rows_with_missing_fields(mock_error_log_dir)
 
 
 def test_process_data_batch_rejects_invalid_and_logs_load_errors(mock_error_log_dir):
+    # Given: payload rows containing type mismatch, duplicate timestamp, and non-standard timestamp format.
+    # When: processing the batch.
+    # Then: only one clean row is accepted and invalid cases are written to DB error logs.
+
     tz = ZoneInfo("America/New_York")
     start = dt.datetime(2026, 1, 26, 10, 0, tzinfo=tz)
     end = dt.datetime(2026, 1, 26, 10, 30, tzinfo=tz)
@@ -199,6 +239,10 @@ def test_process_data_batch_rejects_invalid_and_logs_load_errors(mock_error_log_
 
 
 def test_process_data_batch_logs_duplicate_timestamps(mock_error_log_dir):
+    # Given: two rows with the same symbol and timestamp in one batch.
+    # When: processing for staging insertion.
+    # Then: one row survives dedupe and one duplicate conflict is logged.
+
     tz = ZoneInfo("America/New_York")
     start = dt.datetime(2026, 1, 26, 10, 0, tzinfo=tz)
     end = dt.datetime(2026, 1, 26, 10, 30, tzinfo=tz)
@@ -221,6 +265,10 @@ def test_process_data_batch_logs_duplicate_timestamps(mock_error_log_dir):
 
 
 def test_process_data_batch_logs_schema_type_mismatch(mock_error_log_dir):
+    # Given: payload rows with invalid numeric types and missing timestamp data.
+    # When: processing the batch.
+    # Then: all rows are rejected and schema/data issues are captured in error logs.
+
     tz = ZoneInfo("America/New_York")
     start = dt.datetime(2026, 1, 26, 10, 0, tzinfo=tz)
     end = dt.datetime(2026, 1, 26, 10, 30, tzinfo=tz)

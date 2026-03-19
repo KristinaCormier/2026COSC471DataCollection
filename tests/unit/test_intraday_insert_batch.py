@@ -9,7 +9,10 @@ from src.model.models import MarketData
 
 
 def test_insert_batch_inserts_rows():
-    """Test that _insert_batch calls session.execute and session.commit correctly."""
+    # Given: two valid `MarketData` rows and a mocked SQLAlchemy session.
+    # When: calling `_insert_batch` for the staging table.
+    # Then: the session executes and commits once, returning the inserted row count.
+
     mock_session = MagicMock()
     tz = ZoneInfo("America/New_York")
 
@@ -48,7 +51,10 @@ def test_insert_batch_inserts_rows():
 
 
 def test_insert_batch_upserts_existing_row():
-    """Test that _insert_batch can be called multiple times with same data."""
+    # Given: two batches targeting the same `(symbol, ts)` key with different payload values.
+    # When: invoking `_insert_batch` twice.
+    # Then: both calls execute/commit and each reports one processed row.
+
     mock_session = MagicMock()
     tz = ZoneInfo("America/New_York")
     ts = dt.datetime(2026, 1, 26, 10, 5, tzinfo=tz)
@@ -93,7 +99,10 @@ def test_insert_batch_upserts_existing_row():
 
 
 def test_insert_batch_falls_back_to_insert_when_upsert_key_missing():
-    """Test fallback path when ON CONFLICT cannot find a matching unique key."""
+    # Given: a session that raises ON CONFLICT key-missing on first execute.
+    # When: `_insert_batch` attempts UPSERT and falls back to INSERT.
+    # Then: rollback is called once, second execute succeeds, and one row is reported inserted.
+
     mock_session = MagicMock()
     tz = ZoneInfo("America/New_York")
 
@@ -128,7 +137,10 @@ def test_insert_batch_falls_back_to_insert_when_upsert_key_missing():
 
 
 def test_insert_batch_uses_ts_from_raw_payload_date():
-    """Verify ts values sent to execute match each row's raw_payload date."""
+    # Given: input rows where `raw_payload["date"]` contains canonical timestamp text.
+    # When: `_insert_batch` builds the executable statement.
+    # Then: bound `ts_m*` parameters match parsed timestamps from each payload date.
+
     mock_session = MagicMock()
     tz = ZoneInfo("America/New_York")
 
@@ -177,7 +189,10 @@ def test_insert_batch_uses_ts_from_raw_payload_date():
 
 
 def test_insert_batch_detects_ts_raw_payload_date_mismatch():
-    """Negative check: mismatched raw_payload date should fail equality validation."""
+    # Given: a row whose `ts` differs from `raw_payload["date"]`.
+    # When: `_insert_batch` compiles statement parameters and the test compares derived timestamps.
+    # Then: equality assertion intentionally fails to prove mismatch detection path.
+
     mock_session = MagicMock()
     tz = ZoneInfo("America/New_York")
 
