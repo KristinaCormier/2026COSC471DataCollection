@@ -1,5 +1,6 @@
 import datetime as dt
 from decimal import Decimal
+from typing import Optional
 
 import pytest
 from sqlalchemy import func, select
@@ -25,7 +26,7 @@ pytestmark = [pytest.mark.integration, pytest.mark.postgres_only]
 def _market_row(
     symbol: str,
     ts: dt.datetime,
-    close: Decimal | None,
+    close: Optional[Decimal],
     ingest_time: dt.datetime,
     raw_payload: dict,
 ) -> MarketData:
