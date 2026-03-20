@@ -18,7 +18,6 @@ def mock_env_complete(monkeypatch):
     monkeypatch.setenv("FMP_API_KEY", "test_api_key")
     monkeypatch.setenv("SYMBOLS", "AAPL,MSFT")
     monkeypatch.setenv("MARKET_TZ", "America/New_York")
-    monkeypatch.setenv("WINDOW_MINUTES", "5")
 
 
 @pytest.fixture
@@ -65,7 +64,9 @@ class FakeSession:
 
     def execute(self, *args, **kwargs):
         self.executed.append((args, kwargs))
-        return None
+        result = type("Result", (), {})()
+        result.rowcount = 1
+        return result
 
     def commit(self):
         self.commits += 1
@@ -174,7 +175,6 @@ def test_main_loads_env_vars_at_runtime(mock_market_hours_time, monkeypatch, cap
     monkeypatch.setenv("FMP_API_KEY", "runtime_key")
     monkeypatch.setenv("SYMBOLS", "GOOGL")
     monkeypatch.setenv("MARKET_TZ", "America/Chicago")
-    monkeypatch.setenv("WINDOW_MINUTES", "30")
 
     fake_session = FakeSession()
     captured_db_call = {}
@@ -207,7 +207,7 @@ def test_main_loads_env_vars_at_runtime(mock_market_hours_time, monkeypatch, cap
 def test_main_computes_time_window(mock_market_hours_time, mock_env_complete, monkeypatch, capsys, mock_error_log_dir):
     # Given: a mocked current market time and standard environment.
     # When: `main` computes fetch window and calls API fetch.
-    # Then: captured start/end timestamps are aligned and exactly 5 minutes apart.
+    # Then: captured window spans market-open to aligned-now.
 
     fake_session = FakeSession()
     captured_window = {"start": None, "end": None}
@@ -227,7 +227,9 @@ def test_main_computes_time_window(mock_market_hours_time, mock_env_complete, mo
     assert captured_window["start"] is not None
     assert captured_window["end"] is not None
     assert captured_window["start"] < captured_window["end"]
-    assert (captured_window["end"] - captured_window["start"]) == dt.timedelta(minutes=5)
+    assert (captured_window["end"] - captured_window["start"]) == dt.timedelta(hours=6)
+    assert captured_window["start"].hour == 4
+    assert captured_window["start"].minute == 0
     assert captured_window["start"].minute % 5 == 0
     assert captured_window["end"].minute % 5 == 0
 

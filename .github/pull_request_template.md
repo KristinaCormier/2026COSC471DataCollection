@@ -50,7 +50,7 @@ Do any changes affect the pipeline behavior, schema, environment variables, or c
 - [ ] Yes, breaking changes (describe below)
 
 If yes, describe:
-- Example: "Renamed COLLECTION_INTERVAL_MINUTES to WINDOW_MINUTES (update .env)"
+- Example: "Removed legacy collection-window env var (update .env.template and README docs)"
 - Example: "Added NOT NULL constraint to stg_raw.market_data.source (backfill required)"
 - Example: "Cron schedule for scheduled_operations changed from hourly to daily"
 
@@ -80,7 +80,7 @@ Does this PR add, remove, or change environment variables?
 
 If yes, describe:
 - Example: "Added `DATA_SOURCE_API_KEY` for new FMP endpoint"
-- Example: "Removed legacy `COLLECTION_INTERVAL_MINUTES` (replaced by `WINDOW_MINUTES`)"
+- Example: "Removed legacy collection-window env var (intraday uses market session bounds)"
 
 ## Documentation Updated
 

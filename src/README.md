@@ -8,18 +8,18 @@ These are the main scripts that the system calls. All three are safe to run repe
 
 ### `intraday_data_collection.py`
 
-**Purpose**: Fetch the latest completed 5-minute bar for each symbol and upsert into staging.
+**Purpose**: Fetch completed 5-minute bars from market open through the latest completed interval for each symbol and insert into staging until first existing `(symbol, ts)` conflict.
 
 **Trigger**: Scheduled via cron (default: hourly, see `COLLECTION_SCHEDULE` in `.env`)
 
 **What It Does**:
 1. Loads configuration from environment variables
-2. Calculates a 5-minute time window from the current hour (or window size from `WINDOW_MINUTES`)
+2. Calculates a market-session window from `MARKET_OPEN` to the latest completed 5-minute interval
 3. Clamps the window to `MARKET_OPEN` and `MARKET_CLOSE` time
 4. Fetches intraday bars from FMP API for each symbol
-5. Filters bars to the window
+5. Filters bars to the market-session window and processes newest bars first
 6. Validates each bar for completeness (symbol, ts, OHLC, volume)
-7. Upserts rows into `stg_raw.market_data` with `ON CONFLICT DO UPDATE` on `(symbol, ts)`
+7. Inserts rows into `stg_raw.market_data` with `ON CONFLICT DO NOTHING` and stops each symbol at first existing `(symbol, ts)` row
 8. Logs API errors, validation errors, and database errors to CSV files in `LOG_DIR`
 
 **Usage**:
@@ -33,7 +33,6 @@ python src/intraday_data_collection.py
 - `MARKET_TZ`: Timezone for market hours (default: `America/New_York`)
 - `MARKET_OPEN`: Market open time in HH:MM format (default: `04:00`)
 - `MARKET_CLOSE`: Market close time in HH:MM format (default: `21:00`)
-- `WINDOW_MINUTES`: Collection window size in minutes (default: `60`)
 - `FMP_API_URL`: Base API URL (default: `https://financialmodelingprep.com/api/v3`)
 - `FMP_API_DELAY_SECONDS`: Delay between API calls (default: `0.2`)
 

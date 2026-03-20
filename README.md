@@ -50,7 +50,7 @@ cp .env.template .env
 ```
 
 Required environment variables:
-- **API**: `FMP_API_KEY`, `SYMBOLS`, `MARKET_TZ`, `WINDOW_MINUTES`
+- **API**: `FMP_API_KEY`, `SYMBOLS`, `MARKET_TZ`
 - **Database**: `DATABASE_URL` or `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`
 - **Runtime**: `LOG_DIR`, `MARKET_OPEN`, `MARKET_CLOSE`
 
@@ -106,7 +106,7 @@ Three entry points drive the pipeline:
 
 ### `intraday_data_collection.py` — Live Collection
 - **Trigger**: Scheduled via cron (default: hourly)
-- **Purpose**: Fetch the latest completed 5-minute bar for each symbol and insert/upsert into `stg_raw.market_data`
+- **Purpose**: Fetch completed 5-minute bars from market open through the latest completed interval for each symbol and insert until first existing `(symbol, ts)` conflict
 - **Output**: Rows in `stg_raw.market_data` and error logs in `./logs/`
 - **Usage**: `python src/intraday_data_collection.py`
 
@@ -161,7 +161,6 @@ See `src/model/models.py` and `alembic/versions/20260312_0001_baseline_schema.py
 - **`MARKET_TZ`**: Timezone for market hours clamping (e.g., `America/New_York`)
 - **`MARKET_OPEN`**: Market open time in HH:MM format (default: `04:00`)
 - **`MARKET_CLOSE`**: Market close time in HH:MM format (default: `21:00`)
-- **`WINDOW_MINUTES`**: Size of the collection window in minutes (default: `60`)
 
 ### API
 - **`FMP_API_KEY`**: Financial Modeling Prep API key (required)

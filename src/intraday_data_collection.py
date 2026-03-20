@@ -10,7 +10,7 @@ Intended Use:
     Safe to run multiple times; uses ON CONFLICT DO UPDATE to handle duplicates.
 
 Environment Variables:
-    API: FMP_API_KEY, FMP_API_URL, FMP_API_DELAY_SECONDS, SYMBOLS, MARKET_TZ, WINDOW_MINUTES
+    API: FMP_API_KEY, FMP_API_URL, FMP_API_DELAY_SECONDS, SYMBOLS, MARKET_TZ
     Database: DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD
     Runtime: LOG_DIR, MARKET_OPEN, MARKET_CLOSE
 
@@ -25,10 +25,10 @@ Author: Data Collection Team
 License: MIT
 """
 
-# On execution, this script should fetch stock data for the most recent
-# completed 5 minute interval in EST.
+# On execution, this script should fetch stock data for completed 5 minute
+# intervals from market open through the latest completed interval in EST.
 # It should insert this data into postgres for each symbol provided
-# This script is designed to be executed every 5 minutes throughout every extended market day using a job scheduler
+# This script is designed to be executed using a job scheduler
 
 from __future__ import annotations
 
@@ -65,7 +65,6 @@ def main():
         if s.strip()
     ]
     market_tz = os.environ.get("MARKET_TZ", "America/New_York")
-    window_min = int(os.environ.get("WINDOW_MINUTES", "5"))
     market_open = os.environ.get("MARKET_OPEN", "04:00")
     market_close = os.environ.get("MARKET_CLOSE", "21:00")
 
@@ -85,7 +84,7 @@ def main():
         print(f"error: invalid market hours: {e}", file=sys.stderr)
         sys.exit(1)
 
-    start, end = tu.compute_window(now_local, window_min)
+    end = tu.align_to_5_minute(now_local)
 
     # Clamp window to market hours
     market_open_dt = now_local.replace(
@@ -101,7 +100,7 @@ def main():
         microsecond=0,
     )
 
-    start = max(start, market_open_dt)
+    start = market_open_dt
     end = min(end, market_close_dt)
 
     # If window is entirely outside market hours, skip collection
@@ -182,13 +181,21 @@ def main():
                     end,
                     now_local,
                     tz,
+                    newest_first=True,
                 )
 
                 # Step 4: Insert into database
                 if rows:
-                    total += _insert_batch(session, STAGING_TABLE_NAME, rows, sym, tz)
+                    total += _insert_batch(
+                        session,
+                        STAGING_TABLE_NAME,
+                        rows,
+                        sym,
+                        tz,
+                        stop_on_conflict=True,
+                    )
                 else:
-                    print("(no 5 minute bars in this window)")
+                    print("(no 5 minute bars in this market session window)")
 
             except Exception as e:
                 print(f"[error] {sym}: {e}", file=sys.stderr)
