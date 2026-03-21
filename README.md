@@ -175,7 +175,9 @@ See `src/model/models.py` and `alembic/versions/20260312_0001_baseline_schema.py
 - **`DB_NAME`**: Database name
 - **`DB_USER`**: Database user
 - **`DB_PASSWORD`**: Database password
-- **`TEST_DATABASE_URL`**: Separate test database URL for pytest (optional)
+- **`TEST_DATABASE_URL`**: Test DB mode selector for pytest.
+  - Empty/unset: DB-backed tests run against ephemeral testcontainers PostgreSQL.
+  - Set: DB-backed tests run against this external/non-containerized test database.
 
 ### Runtime
 - **`LOG_DIR`**: Directory where error/execution logs are written (default: `./logs`)
@@ -209,10 +211,30 @@ Run the full test suite:
 pytest -v
 ```
 
+Run by phase:
+```bash
+# Phase 1 (unit, DB-free)
+pytest tests/unit/ -m "not postgres_only" -v
+
+# Phase 2 (integration, PostgreSQL required)
+pytest tests/integration/ -m integration -v
+
+# Phase 3 (pipeline, PostgreSQL required)
+pytest tests/pipeline/ -m pipeline -v
+```
+
+For local DB-backed testing, `tests/conftest.py` checks only `TEST_DATABASE_URL`:
+- `TEST_DATABASE_URL` empty/unset -> ephemeral PostgreSQL via `testcontainers` (default)
+- `TEST_DATABASE_URL` set -> external/non-containerized test database
+
 With coverage:
 ```bash
 pytest --cov=src --cov-report=term-missing
 ```
+
+CI uses phase-aware jobs in `.github/workflows/pytest.yml`:
+- Phase 1 unit checks are required on PR and merge queue.
+- Phase 2 integration and Phase 3 pipeline checks are informational on PR/push and required on merge queue.
 
 See [tests/README.md](tests/README.md) for more options and fixture documentation.
 

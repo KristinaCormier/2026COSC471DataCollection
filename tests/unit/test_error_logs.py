@@ -14,7 +14,10 @@ TZ = ZoneInfo("America/New_York")
 
 
 def test_log_api_error_creates_file_and_writes_header(mock_error_log_dir):
-    
+    # Given: an empty log directory and one API error payload.
+    # When: writing the error with `log_api_error`.
+    # Then: `api_errors.csv` is created with the expected header and one data row.
+
     mod.log_api_error(
         symbol="AAPL",
         url="https://api.example.com/data",
@@ -36,6 +39,10 @@ def test_log_api_error_creates_file_and_writes_header(mock_error_log_dir):
 
 
 def test_log_api_error_appends_multiple_errors(mock_error_log_dir):
+    # Given: an API log file after the first error write.
+    # When: logging two API errors in sequence.
+    # Then: both entries are appended in order under a single header.
+
     mod.log_api_error(
         symbol="MSFT",
         url="https://api.example.com/msft",
@@ -61,6 +68,10 @@ def test_log_api_error_appends_multiple_errors(mock_error_log_dir):
 
 
 def test_log_validation_error_creates_file_and_writes_data(mock_error_log_dir):
+    # Given: a validation-failure row with missing fields.
+    # When: recording the issue with `log_validation_error`.
+    # Then: `data_errors.csv` is created with expected schema and row details.
+
     row_data = {"date": "", "open": "150.5", "high": "", "low": "148.2", "close": "149.0", "volume": ""}
     
     mod.log_validation_error(
@@ -82,6 +93,10 @@ def test_log_validation_error_creates_file_and_writes_data(mock_error_log_dir):
 
 
 def test_log_validation_error_with_inferred_date(mock_error_log_dir):
+    # Given: a validation error that includes an inferred timestamp.
+    # When: logging the event with `log_validation_error`.
+    # Then: the inferred date is serialized in ISO format in the log row.
+
     inferred = dt.datetime(2026, 2, 3, 10, 30, tzinfo=TZ)
     row_data = {"date": None, "open": "100.0"}
     
@@ -104,6 +119,10 @@ def test_log_validation_error_with_inferred_date(mock_error_log_dir):
 
 
 def test_log_db_error_creates_file_with_full_details(mock_error_log_dir):
+    # Given: a detailed database error context (operation, table, row count).
+    # When: writing it with `log_db_error`.
+    # Then: `db_insert_errors.csv` contains full context columns and expected values.
+
     mod.log_db_error(
         symbol="AAPL",
         operation="UPSERT",
@@ -128,6 +147,10 @@ def test_log_db_error_creates_file_with_full_details(mock_error_log_dir):
 
 
 def test_log_db_error_connection_failure(mock_error_log_dir):
+    # Given: a connection-level database failure payload.
+    # When: logging it via `log_db_error`.
+    # Then: the log row captures CONNECT operation details and error message.
+
     mod.log_db_error(
         symbol="N/A",
         operation="CONNECT",
@@ -146,6 +169,10 @@ def test_log_db_error_connection_failure(mock_error_log_dir):
 
 
 def test_all_error_logs_use_iso_timestamps(mock_error_log_dir):
+    # Given: a newly logged API error entry.
+    # When: extracting and parsing the timestamp field from the CSV row.
+    # Then: the timestamp is valid ISO format and timezone-aware.
+
     # Test API error timestamp
     mod.log_api_error(
         symbol="TEST",
@@ -165,7 +192,10 @@ def test_all_error_logs_use_iso_timestamps(mock_error_log_dir):
 
 
 def test_error_log_directory_validation_creates_missing_directory(tmp_path):
-    """Test that _validate_log_dir creates a missing directory."""
+    # Given: a nested log directory path that does not exist.
+    # When: validating it with `_validate_log_dir`.
+    # Then: the directory is created and available for writes.
+
     from pathlib import Path
     from utils import logging_utils
 
@@ -178,7 +208,10 @@ def test_error_log_directory_validation_creates_missing_directory(tmp_path):
 
 
 def test_error_log_directory_validation_succeeds_if_exists_and_writable(mock_error_log_dir):
-    """Test that _validate_log_dir succeeds for writable directory."""
+    # Given: an existing writable log directory fixture.
+    # When: validating it with `_validate_log_dir`.
+    # Then: no exception is raised.
+
     from utils import logging_utils
     
     # Should not raise
@@ -186,7 +219,10 @@ def test_error_log_directory_validation_succeeds_if_exists_and_writable(mock_err
 
 
 def test_error_log_file_creation_creates_missing_parent_directory(tmp_path):
-    """Test that _ensure_log_file creates a missing parent directory."""
+    # Given: a log file path whose parent directories do not exist.
+    # When: calling `_ensure_log_file` with required header fields.
+    # Then: parent directories are created and the file exists.
+
     from utils import logging_utils
 
     missing_parent = tmp_path / "missing" / "dc_error_logs" / "api_errors.csv"

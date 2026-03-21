@@ -75,25 +75,31 @@ def make_market_row(**overrides):
 
 
 @pytest.mark.unit
-@patch.dict("os.environ", {"DB_NAME": "testdb", "DB_USER": "testuser"}, clear=True)
-def test_validate_environment_accepts_db_vars():
-    assert mod.validate_environment() is True
-
-
-@pytest.mark.unit
 @patch.dict("os.environ", {"DATABASE_URL": "postgresql+psycopg://user:pass@localhost/db"}, clear=True)
 def test_validate_environment_accepts_database_url():
+    # Given: environment includes a non-empty `DATABASE_URL`.
+    # When: validating runtime prerequisites.
+    # Then: `validate_environment` returns true.
+
     assert mod.validate_environment() is True
 
 
 @pytest.mark.unit
 @patch.dict("os.environ", {}, clear=True)
 def test_validate_environment_fails_without_connection_settings():
+    # Given: environment is cleared of database connection settings.
+    # When: running `validate_environment`.
+    # Then: validation fails and returns false.
+
     assert mod.validate_environment() is False
 
 
 @pytest.mark.unit
 def test_classify_quality_issue_matches_export_rules():
+    # Given: staged rows with targeted invalid conditions (missing close/open, negative volume, missing timestamp).
+    # When: classifying each row via `classify_quality_issue`.
+    # Then: returned issue codes match export pipeline quality rules.
+
     assert classify_quality_issue(make_market_row(close=None)) == "invalid_price"
     assert classify_quality_issue(make_market_row(open=None)) == "incomplete_ohlc"
     assert classify_quality_issue(make_market_row(volume=-1)) == "invalid_volume"
@@ -103,6 +109,10 @@ def test_classify_quality_issue_matches_export_rules():
 
 @pytest.mark.unit
 def test_dedupe_staging_rows_keeps_first_row_and_logs_duplicates():
+    # Given: two staging rows with the same business key but different ingest metadata.
+    # When: deduplicating with `dedupe_staging_rows`.
+    # Then: first row remains winner and duplicate conflict log captures both rows.
+
     winner = make_market_row(ingest_id=10, ingest_time=dt.datetime(2026, 3, 10, 14, 7, tzinfo=dt.timezone.utc))
     duplicate = make_market_row(ingest_id=9, ingest_time=dt.datetime(2026, 3, 10, 14, 6, tzinfo=dt.timezone.utc))
 
@@ -117,6 +127,10 @@ def test_dedupe_staging_rows_keeps_first_row_and_logs_duplicates():
 
 @pytest.mark.unit
 def test_build_export_payloads_separates_valid_rows_from_quality_errors():
+    # Given: one valid row and one quality-invalid row.
+    # When: building export payloads.
+    # Then: valid row becomes export payload while invalid row becomes a quality error record.
+
     valid_row = make_market_row(symbol="AAPL")
     invalid_row = make_market_row(symbol="MSFT", close=None)
 
@@ -132,6 +146,10 @@ def test_build_export_payloads_separates_valid_rows_from_quality_errors():
 
 @pytest.mark.unit
 def test_summarize_step_formats_nonzero_counts_only():
+    # Given: a pipeline summary with selected non-zero counters.
+    # When: formatting it with `summarize_step`.
+    # Then: output includes only relevant non-zero count fields.
+
     summary = PipelineSummary(processed_rows=12, duplicate_rows=2, exported_rows=10)
     assert mod.summarize_step(summary) == "processed=12, exported=10, duplicates=2"
 
@@ -139,6 +157,10 @@ def test_summarize_step_formats_nonzero_counts_only():
 @pytest.mark.unit
 @patch("run_scheduled_operations.log_execution")
 def test_execute_pipeline_step_commits_and_logs_success(mock_log):
+    # Given: a fake session factory and operation that succeeds.
+    # When: executing one pipeline step.
+    # Then: transaction commits, session closes, and success log metadata is emitted.
+
     session_factory = FakeSessionFactory()
 
     def operation(session):
@@ -159,6 +181,10 @@ def test_execute_pipeline_step_commits_and_logs_success(mock_log):
 @pytest.mark.unit
 @patch("run_scheduled_operations.log_execution")
 def test_execute_pipeline_step_logs_failure(mock_log):
+    # Given: a pipeline operation that raises an exception.
+    # When: executing the step through `execute_pipeline_step`.
+    # Then: step reports failure and logs the error message without committing.
+
     session_factory = FakeSessionFactory()
 
     def operation(session):
@@ -175,6 +201,10 @@ def test_execute_pipeline_step_logs_failure(mock_log):
 
 @pytest.mark.unit
 def test_log_execution_persists_pipeline_log_record():
+    # Given: a fake session factory and warning-level step metadata.
+    # When: calling `log_execution`.
+    # Then: one pipeline log row is inserted and committed with expected message content.
+
     session_factory = FakeSessionFactory()
 
     mod.log_execution(
@@ -195,6 +225,10 @@ def test_log_execution_persists_pipeline_log_record():
 
 @pytest.mark.unit
 def test_configure_logging_creates_missing_log_directory(tmp_path, monkeypatch):
+    # Given: LOG_DIR points to a nested path that does not exist.
+    # When: configuring logging.
+    # Then: directory and `scheduled_operations.log` are created successfully.
+
     missing_dir = tmp_path / "nested" / "logs"
     monkeypatch.setattr(mod, "LOG_DIR", missing_dir)
 
@@ -207,6 +241,10 @@ def test_configure_logging_creates_missing_log_directory(tmp_path, monkeypatch):
 
 @pytest.mark.unit
 def test_configure_logging_fails_if_log_dir_not_writable(tmp_path, monkeypatch):
+    # Given: LOG_DIR points to a read-only directory.
+    # When: calling `configure_logging`.
+    # Then: a `PermissionError` is raised.
+
     read_only_dir = tmp_path / "readonly"
     read_only_dir.mkdir()
     read_only_dir.chmod(0o555)
@@ -221,6 +259,10 @@ def test_configure_logging_fails_if_log_dir_not_writable(tmp_path, monkeypatch):
 
 @pytest.mark.unit
 def test_main_returns_failure_when_environment_validation_fails(tmp_path, monkeypatch):
+    # Given: runtime validation is patched to fail.
+    # When: running `main`.
+    # Then: process exits early with failure code 1.
+
     monkeypatch.setattr(mod, "LOG_DIR", tmp_path / "logs")
     monkeypatch.setattr(mod, "logger", None)
 
@@ -229,8 +271,12 @@ def test_main_returns_failure_when_environment_validation_fails(tmp_path, monkey
 
 
 @pytest.mark.unit
-@patch.dict("os.environ", {"DB_NAME": "testdb", "DB_USER": "testuser"}, clear=True)
+@patch.dict("os.environ", {"DATABASE_URL": "postgresql+psycopg://u:p@localhost/db"}, clear=True)
 def test_main_executes_pipeline_in_order_and_skips_failed_dependency(tmp_path, monkeypatch):
+    # Given: pipeline steps where export fails and truncate depends on export success.
+    # When: invoking `main` with fake engine/session/log hooks.
+    # Then: export runs and fails, dependent step is logged as warning/skip, and overall result is failure.
+
     monkeypatch.setattr(mod, "LOG_DIR", tmp_path / "logs")
     monkeypatch.setattr(mod, "logger", None)
 

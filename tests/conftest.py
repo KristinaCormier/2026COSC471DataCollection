@@ -8,7 +8,6 @@ Purpose:
 Session-Scoped Fixtures (initialized once per test session):
     - project_root: Path to repository root directory
     - data_dir: Path to tests/data/ fixture directory
-    - db_url: Test database URL from TEST_DATABASE_URL env var or default
     - db_engine: SQLAlchemy engine (auto-disposed after all tests)
 
 Function-Scoped Fixtures (created fresh per test, rolled back after):
@@ -28,8 +27,9 @@ Usage:
         pass
 
 Environment:
-    - DB_PORT, DB_HOST, DB_NAME, DB_USER, DB_PASSWORD default to safe test values
-    - TEST_DATABASE_URL can override all connection settings at once
+        - TEST_DATABASE_URL controls DB mode for DB-backed tests
+            - empty/unset: provision ephemeral PostgreSQL via testcontainers
+            - set: use external/non-containerized test database
     - All database operations are wrapped in transactions for test isolation
 
 Author: Data Collection Team
@@ -46,8 +46,13 @@ import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
-# Ensure required env vars exist before importing modules under test.
-os.environ.setdefault("DB_PORT", "5432")
+
+def _normalize_sqlalchemy_postgres_url(url: str) -> str:
+    if url.startswith("postgresql+psycopg2://"):
+        return "postgresql+psycopg://" + url[len("postgresql+psycopg2://") :]
+    if url.startswith("postgresql://"):
+        return "postgresql+psycopg://" + url[len("postgresql://") :]
+    return url
 
 
 @pytest.fixture(scope="session")
@@ -74,19 +79,70 @@ def sample_dataframe():
 
 
 @pytest.fixture(scope="session")
-def db_url() -> str:
-    return os.getenv(
-        "TEST_DATABASE_URL",
-        "postgresql+psycopg://cdem:COSC2024@localhost:5432/cade_test",
-    )
-
-
-@pytest.fixture(scope="session")
-def db_engine(db_url: str):
+def db_engine():
     sqlalchemy = pytest.importorskip("sqlalchemy")
-    engine = sqlalchemy.create_engine(db_url, future=True, pool_pre_ping=True)
-    yield engine
-    engine.dispose()
+    connect_timeout = int(os.getenv("DB_CONNECT_TIMEOUT_SECONDS", "5"))
+    explicit_url = os.getenv("TEST_DATABASE_URL", "").strip()
+
+    engine = None
+    container = None
+
+    def _create_engine(url: str):
+        return sqlalchemy.create_engine(
+            _normalize_sqlalchemy_postgres_url(url),
+            future=True,
+            pool_pre_ping=True,
+            connect_args={"connect_timeout": connect_timeout},
+        )
+
+    def _init_and_validate(candidate_engine):
+        with candidate_engine.connect() as conn:
+            conn.execute(sqlalchemy.text("SELECT 1"))
+
+        # Keep DB-backed tests self-contained by ensuring required schemas/tables exist.
+        from model.orm_db import init_db
+
+        init_db(candidate_engine)
+
+    try:
+        if explicit_url:
+            engine = _create_engine(explicit_url)
+            _init_and_validate(engine)
+            yield engine
+            return
+
+        container_user = os.getenv("TESTCONTAINERS_DB_USER", "test_user")
+        container_password = os.getenv("TESTCONTAINERS_DB_PASSWORD", "test_password")
+        container_db = os.getenv("TESTCONTAINERS_DB_NAME", "test_db")
+        container_image = os.getenv("TESTCONTAINERS_POSTGRES_IMAGE", "postgres:16")
+
+        from testcontainers.postgres import PostgresContainer
+
+        container = PostgresContainer(
+            image=container_image,
+            username=container_user,
+            password=container_password,
+            dbname=container_db,
+        )
+        container.start()
+
+        container_url = container.get_connection_url()
+        engine = _create_engine(container_url)
+        _init_and_validate(engine)
+        yield engine
+    except Exception as exc:
+        if explicit_url:
+            pytest.fail(f"failed to connect to external TEST_DATABASE_URL test database: {exc}")
+        pytest.fail(
+            "failed to provision testcontainers PostgreSQL for DB-backed tests. "
+            "Set TEST_DATABASE_URL to use an external non-containerized test database. "
+            f"Error: {exc}"
+        )
+    finally:
+        if engine is not None:
+            engine.dispose()
+        if container is not None:
+            container.stop()
 
 
 @pytest.fixture(scope="function")
