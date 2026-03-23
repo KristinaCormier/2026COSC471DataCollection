@@ -192,6 +192,7 @@ See `src/model/models.py` and `alembic/versions/20260312_0001_baseline_schema.py
 | `no matching row in table` | Test database not initialized | Run pytest setup or initialize manually |
 | `UNIQUE constraint violation` | Attempted duplicate insert outside upsert | Check caller is using ORM with `on_conflict_do_update` |
 | `permission denied on sequence` | Database role lacks privileges | Grant sequence privileges to user in PostgreSQL |
+| `failed to provision testcontainers PostgreSQL` with `Permission denied` on `/var/run/docker.sock` | Current Linux user cannot access Docker daemon socket (not in `docker` group, or stale login session after group change) | Add user to docker group (`sudo usermod -aG docker "$USER"`), start a new login shell (`newgrp docker` or log out/in), then verify with `docker info` |
 | `Log directory is not writable` | `LOG_DIR` points to a protected location | Set `LOG_DIR` to a writable project-local path such as `./logs` |
 
 ## Documentation Map
