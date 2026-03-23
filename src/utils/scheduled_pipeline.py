@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any, Final, Iterator, Sequence
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -219,7 +219,11 @@ def clear_staging_tables(session: Session) -> PipelineSummary:
     market_data_rows = session.scalar(select(func.count()).select_from(MarketData)) or 0
     ingest_error_rows = session.scalar(select(func.count()).select_from(IngestError)) or 0
 
-    session.execute(delete(IngestError))
-    session.execute(delete(MarketData))
+    # Use PostgreSQL TRUNCATE for fast, true table truncation and sequence reset.
+    session.execute(
+        text(
+            "TRUNCATE TABLE stg_raw.ingest_errors, stg_raw.market_data RESTART IDENTITY"
+        )
+    )
 
     return PipelineSummary(truncated_rows=market_data_rows + ingest_error_rows)
