@@ -15,6 +15,7 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Optional
+from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
 
 from sqlalchemy import create_engine
@@ -27,6 +28,7 @@ from utils.scheduled_pipeline import (
     clear_staging_tables,
     export_staging_to_core,
 )
+from utils.time_utils import parse_hhmm
 
 # Setup logging to both file and stderr
 # Log directory must be pre-provisioned by setup script
@@ -78,11 +80,34 @@ def configure_logging() -> logging.Logger:
 PipelineOperation = Callable[[Session], PipelineSummary]
 
 
-# Deterministic execution plan for scheduled operations.
-PIPELINE_STEPS: tuple[tuple[str, Optional[str], PipelineOperation], ...] = (
-    ("export_stg_to_core", None, export_staging_to_core),
-    ("truncate_stg_raw", "export_stg_to_core", clear_staging_tables),
-)
+def should_truncate_staging_after_close(now_local: datetime, close_time_str: str) -> bool:
+    """Return True only on weekdays at/after market close in local market time."""
+    close_time = parse_hhmm(close_time_str)
+    if now_local.weekday() >= 5:
+        return False
+    return now_local.time() >= close_time
+
+
+def build_pipeline_steps(now_local: datetime | None = None) -> tuple[tuple[str, Optional[str], PipelineOperation], ...]:
+    """
+    Build scheduled pipeline steps for the current execution window.
+
+    Export runs on every invocation. Staging truncate only runs after market close
+    on trading weekdays, preventing daytime full-day backfill churn.
+    """
+    market_tz = os.getenv("MARKET_TZ", "America/New_York")
+    market_close = os.getenv("MARKET_CLOSE", "21:00")
+    if now_local is None:
+        now_local = datetime.now(ZoneInfo(market_tz))
+
+    steps: list[tuple[str, Optional[str], PipelineOperation]] = [
+        ("export_stg_to_core", None, export_staging_to_core),
+    ]
+
+    if should_truncate_staging_after_close(now_local, market_close):
+        steps.append(("truncate_stg_raw", "export_stg_to_core", clear_staging_tables))
+
+    return tuple(steps)
 
 
 def validate_environment() -> bool:
@@ -247,8 +272,22 @@ def main() -> int:
     # Execute steps in fixed order, skipping dependent stages when prerequisites fail.
     results: dict[str, tuple[bool, Optional[str]]] = {}
     skipped_scripts: dict[str, str] = {}
+    configured_steps = build_pipeline_steps()
+
+    if not any(step_name == "truncate_stg_raw" for step_name, _, _ in configured_steps):
+        skip_reason = "Skipped because market close has not been reached"
+        skipped_scripts["truncate_stg_raw"] = skip_reason
+        logger.info(f"truncate_stg_raw skipped. {skip_reason}.")
+        log_execution(
+            session_factory,
+            "truncate_stg_raw",
+            "warning",
+            0.0,
+            detail_message=skip_reason,
+        )
+
     try:
-        for step_name, dependency_step, operation in PIPELINE_STEPS:
+        for step_name, dependency_step, operation in configured_steps:
             if dependency_step is not None:
                 dependency_result = results.get(dependency_step)
                 if not dependency_result or not dependency_result[0]:
