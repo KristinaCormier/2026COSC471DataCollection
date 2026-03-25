@@ -177,8 +177,11 @@ def test_main_executes_pipeline_and_skips_failed_dependency(tmp_path, monkeypatc
 
     monkeypatch.setattr(
         mod,
-        "PIPELINE_STEPS",
-        (("export_stg_to_core", None, export_step), ("truncate_stg_raw", "export_stg_to_core", truncate_step)),
+        "build_pipeline_steps",
+        lambda now_local=None: (
+            ("export_stg_to_core", None, export_step),
+            ("truncate_stg_raw", "export_stg_to_core", truncate_step),
+        ),
     )
     monkeypatch.setattr(mod, "build_runtime_engine", lambda: FakeEngine())
     monkeypatch.setattr(mod, "get_session_factory", lambda engine: session_factory)
@@ -199,7 +202,7 @@ def test_main_executes_pipeline_and_skips_failed_dependency(tmp_path, monkeypatc
 
 @patch.dict("os.environ", {"DATABASE_URL": "postgresql+psycopg://u:p@localhost/db"}, clear=True)
 def test_main_logs_database_url_connection_mode(tmp_path, monkeypatch):
-    # Given: a valid DATABASE_URL and an empty PIPELINE_STEPS list.
+    # Given: a valid DATABASE_URL and an empty scheduled steps list.
     # When: main initializes runtime and performs the connectivity precheck.
     # Then: it completes successfully and returns exit code 0.
 
@@ -222,7 +225,7 @@ def test_main_logs_database_url_connection_mode(tmp_path, monkeypatch):
 
     monkeypatch.setattr(mod, "build_runtime_engine", lambda: FakeEngine())
     monkeypatch.setattr(mod, "get_session_factory", lambda engine: FakeSessionFactory())
-    monkeypatch.setattr(mod, "PIPELINE_STEPS", ())
+    monkeypatch.setattr(mod, "build_pipeline_steps", lambda now_local=None: ())
 
     assert mod.main() == 0
 

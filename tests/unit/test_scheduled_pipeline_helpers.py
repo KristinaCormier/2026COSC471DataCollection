@@ -60,3 +60,17 @@ def test_serialize_market_data_row_includes_expected_fields():
     assert serialized["asset_type"] == "stock"
     assert serialized["source"] == "fmp"
     assert serialized["raw_payload"] == {"bars": [1, 2, 3]}
+
+
+def test_iter_batches_splits_items_into_expected_chunk_sizes():
+    # Given: a payload list larger than the desired batch size.
+    # When: iterating with `iter_batches`.
+    # Then: batches are yielded in fixed-size chunks with a final remainder.
+
+    payloads = [{"symbol": f"SYM{i}"} for i in range(5)]
+
+    batches = list(sp.iter_batches(payloads, batch_size=2))
+
+    assert [len(batch) for batch in batches] == [2, 2, 1]
+    assert batches[0][0]["symbol"] == "SYM0"
+    assert batches[-1][0]["symbol"] == "SYM4"

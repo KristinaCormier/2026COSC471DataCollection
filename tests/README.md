@@ -81,7 +81,6 @@ Create a `.env` file at the project root (or export variables) with:
 - `FMP_API_KEY`: Set to `test_api_key` for unit tests; not used in mocked integration tests
 - `SYMBOLS`: Set to `AAPL,MSFT` (default)
 - `MARKET_TZ`: Set to `America/New_York` (default)
-- `WINDOW_MINUTES`: Set to `60` (default)
 - `LOG_DIR`: Set to `./logs` (default)
 
 **Optional testcontainers tuning**:
@@ -225,7 +224,7 @@ To check what CI will run before pushing:
 ```bash
 # Use default local testcontainers behavior for DB-backed phases
 export TEST_DATABASE_URL=""
-export FMP_API_KEY=test_api_key SYMBOLS="AAPL,MSFT" MARKET_TZ="America/New_York" WINDOW_MINUTES=60
+export FMP_API_KEY=test_api_key SYMBOLS="AAPL,MSFT" MARKET_TZ="America/New_York"
 
 # Run the same commands as CI
 pytest tests/unit/ -v -m "not postgres_only" \

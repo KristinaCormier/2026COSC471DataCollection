@@ -140,6 +140,37 @@ def test_process_data_batch_sorts_by_ts():
     assert rows[1].ts.minute == 25
 
 
+def test_process_data_batch_sorts_newest_first_when_enabled():
+    # Given: two in-range payload rows provided out of chronological order.
+    # When: processing the batch with `newest_first=True`.
+    # Then: output rows are sorted descending by timestamp.
+
+    tz = ZoneInfo("America/New_York")
+    start = dt.datetime(2026, 1, 26, 10, 0, tzinfo=tz)
+    end = dt.datetime(2026, 1, 26, 10, 30, tzinfo=tz)
+
+    api_payload = [
+        {"date": "2026-01-26 10:05:00", "open": 1, "high": 2, "low": 1, "close": 1.5, "volume": 10},
+        {"date": "2026-01-26 10:25:00", "open": 1, "high": 2, "low": 1, "close": 1.7, "volume": 10},
+    ]
+
+    rows = collector._process_data_batch(
+        api_payload,
+        "AAPL",
+        collector.STAGING_TABLE_NAME,
+        "FMP_intraday",
+        start,
+        end,
+        dt.datetime(2026, 1, 26, 10, 30, tzinfo=tz),
+        tz,
+        newest_first=True,
+    )
+
+    assert len(rows) == 2
+    assert rows[0].ts.minute == 25
+    assert rows[1].ts.minute == 5
+
+
 def test_process_data_batch_infers_missing_date_field(mock_error_log_dir):
     # Given: a payload row without `date` plus a deterministic `now_local` reference.
     # When: running `_process_data_batch`.

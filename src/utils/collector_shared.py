@@ -8,7 +8,6 @@ both intraday and historical data collection scripts.
 from __future__ import annotations
 
 import datetime as dt
-import sys
 from typing import Final
 from zoneinfo import ZoneInfo
 
@@ -216,6 +215,7 @@ def _process_data_batch(
     end: dt.datetime,
     now_local: dt.datetime | None,
     tz: ZoneInfo,
+    newest_first: bool = False,
 ) -> list[MarketData]:
     """Validate rows, filter to window, and return sorted MarketData rows."""
     hard_invalid_found = False
@@ -270,7 +270,7 @@ def _process_data_batch(
             )
         )
 
-    rows.sort(key=lambda x: x.ts)
+    rows.sort(key=lambda x: x.ts, reverse=newest_first)
     return rows
 
 
@@ -280,13 +280,16 @@ def _insert_batch(
     rows: list[MarketData],
     symbol: str,
     tz: ZoneInfo,
+    stop_on_conflict: bool = False,
 ) -> int:
-    """Upsert a validated batch and return inserted/upserted row count."""
+    """Insert a validated batch and return processed row count."""
     if not rows:
         return 0
 
-    values = [
-        {
+    inserted = 0
+
+    for row in rows:
+        row_values = {
             "symbol": row.symbol,
             "ts": row.ts,
             "open": row.open,
@@ -298,85 +301,53 @@ def _insert_batch(
             "source": row.source,
             "raw_payload": row.raw_payload,
         }
-        for row in rows
-    ]
 
-    insert_stmt = insert(MarketData).values(values)
-    upsert_stmt = insert_stmt.on_conflict_do_update(
-        index_elements=[MarketData.symbol, MarketData.ts],
-        set_={
-            "open": insert_stmt.excluded.open,
-            "high": insert_stmt.excluded.high,
-            "low": insert_stmt.excluded.low,
-            "close": insert_stmt.excluded.close,
-            "volume": insert_stmt.excluded.volume,
-            "asset_type": insert_stmt.excluded.asset_type,
-            "raw_payload": insert_stmt.excluded.raw_payload,
-        },
-    )
+        stmt = insert(MarketData).values(row_values).on_conflict_do_nothing(
+            index_elements=[MarketData.symbol, MarketData.ts]
+        )
 
-    try:
-        session.execute(upsert_stmt)
-        session.commit()
-    except Exception as e:
-        session.rollback()
-        err_msg = str(e).lower()
+        try:
+            result = session.execute(stmt)
+            session.commit()
+        except Exception as e:
+            session.rollback()
+            lu.log_db_error(
+                symbol=symbol,
+                operation="INSERT",
+                error_type=type(e).__name__,
+                error_message=str(e),
+                table_name=staging_table_name,
+                row_count=1,
+                tz=tz,
+            )
+            raise
 
-        if (
-            "constraint \"unique_symbol_ts_source\"" in err_msg
-            or "no unique or exclusion constraint matching the on conflict specification" in err_msg
-        ):
-            try:
+        if result.rowcount == 0:
+            if stop_on_conflict:
                 lu.log_db_error(
                     symbol=symbol,
-                    operation="UPSERT_FALLBACK",
-                    error_type=type(e).__name__,
+                    operation="INSERT_STOP_ON_CONFLICT",
+                    error_type="DuplicateTimestamp",
                     error_message=(
-                        "UPSERT key missing; falling back to INSERT-only batch: "
-                        f"{e}"
+                        "existing row encountered; stopping symbol backfill at "
+                        f"{row.ts.isoformat()}"
                     ),
                     table_name=staging_table_name,
-                    row_count=len(rows),
+                    row_count=1,
                     tz=tz,
                 )
-            except Exception as log_err:
                 print(
-                    "[warning] failed to write UPSERT_FALLBACK log entry: "
-                    f"{log_err}",
-                    file=sys.stderr,
+                    "stopped symbol "
+                    f"{symbol} at existing timestamp {row.ts.isoformat()}"
                 )
-            try:
-                session.execute(insert_stmt)
-                session.commit()
-                print(
-                    "inserted "
-                    f"{len(rows)} rows into {staging_table_name} "
-                    "(fallback insert: no upsert key found)"
-                )
-                return len(rows)
-            except Exception as fallback_err:
-                session.rollback()
-                lu.log_db_error(
-                    symbol=symbol,
-                    operation="INSERT",
-                    error_type=type(fallback_err).__name__,
-                    error_message=str(fallback_err),
-                    table_name=staging_table_name,
-                    row_count=len(rows),
-                    tz=tz,
-                )
-                raise
+                break
+            continue
 
-        lu.log_db_error(
-            symbol=symbol,
-            operation="UPSERT",
-            error_type=type(e).__name__,
-            error_message=str(e),
-            table_name=staging_table_name,
-            row_count=len(rows),
-            tz=tz,
-        )
-        raise
+        inserted += 1
 
-    print(f"inserted/upserted {len(rows)} rows into {staging_table_name}")
-    return len(rows)
+    if stop_on_conflict:
+        print(f"inserted {inserted} rows into {staging_table_name}")
+    else:
+        print(f"inserted/upserted {inserted} rows into {staging_table_name}")
+
+    return inserted

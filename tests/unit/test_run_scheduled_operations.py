@@ -4,6 +4,7 @@ import datetime as dt
 import sys
 from pathlib import Path
 from unittest.mock import patch
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -224,6 +225,58 @@ def test_log_execution_persists_pipeline_log_record():
 
 
 @pytest.mark.unit
+def test_should_truncate_staging_after_close_true_on_weekday_after_close():
+    # Given: a weekday timestamp after configured close time.
+    # When: evaluating truncation eligibility.
+    # Then: truncate gate returns True.
+
+    now_local = dt.datetime(2026, 3, 20, 21, 15, tzinfo=ZoneInfo("America/New_York"))
+    assert mod.should_truncate_staging_after_close(now_local, "21:00") is True
+
+
+@pytest.mark.unit
+def test_should_truncate_staging_after_close_false_before_close_or_weekend():
+    # Given: one weekday timestamp before close and one weekend timestamp after close.
+    # When: evaluating truncation eligibility.
+    # Then: truncate gate returns False for both scenarios.
+
+    before_close = dt.datetime(2026, 3, 20, 20, 59, tzinfo=ZoneInfo("America/New_York"))
+    saturday_after_close = dt.datetime(2026, 3, 21, 21, 10, tzinfo=ZoneInfo("America/New_York"))
+    assert mod.should_truncate_staging_after_close(before_close, "21:00") is False
+    assert mod.should_truncate_staging_after_close(saturday_after_close, "21:00") is False
+
+
+@pytest.mark.unit
+def test_build_pipeline_steps_excludes_truncate_during_market_hours(monkeypatch):
+    # Given: a weekday timestamp during market hours.
+    # When: building scheduled pipeline steps.
+    # Then: export is present and truncate is excluded.
+
+    monkeypatch.setenv("MARKET_CLOSE", "21:00")
+    steps = mod.build_pipeline_steps(
+        now_local=dt.datetime(2026, 3, 20, 15, 0, tzinfo=ZoneInfo("America/New_York"))
+    )
+
+    step_names = [step_name for step_name, _, _ in steps]
+    assert step_names == ["export_stg_to_core"]
+
+
+@pytest.mark.unit
+def test_build_pipeline_steps_includes_truncate_after_close(monkeypatch):
+    # Given: a weekday timestamp after market close.
+    # When: building scheduled pipeline steps.
+    # Then: export and truncate are both scheduled.
+
+    monkeypatch.setenv("MARKET_CLOSE", "21:00")
+    steps = mod.build_pipeline_steps(
+        now_local=dt.datetime(2026, 3, 20, 21, 5, tzinfo=ZoneInfo("America/New_York"))
+    )
+
+    step_names = [step_name for step_name, _, _ in steps]
+    assert step_names == ["export_stg_to_core", "truncate_stg_raw"]
+
+
+@pytest.mark.unit
 def test_configure_logging_creates_missing_log_directory(tmp_path, monkeypatch):
     # Given: LOG_DIR points to a nested path that does not exist.
     # When: configuring logging.
@@ -306,7 +359,14 @@ def test_main_executes_pipeline_in_order_and_skips_failed_dependency(tmp_path, m
 
     session_factory = FakeSessionFactory()
 
-    monkeypatch.setattr(mod, "PIPELINE_STEPS", (("export_stg_to_core", None, export_step), ("truncate_stg_raw", "export_stg_to_core", truncate_step)))
+    monkeypatch.setattr(
+        mod,
+        "build_pipeline_steps",
+        lambda now_local=None: (
+            ("export_stg_to_core", None, export_step),
+            ("truncate_stg_raw", "export_stg_to_core", truncate_step),
+        ),
+    )
     monkeypatch.setattr(mod, "build_runtime_engine", lambda: FakeEngine())
     monkeypatch.setattr(mod, "get_session_factory", lambda engine: session_factory)
 
