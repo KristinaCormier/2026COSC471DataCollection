@@ -262,6 +262,21 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: no files matched {args.pattern!r} in {csv_dir}", file=sys.stderr)
         return 1
 
+    try:
+        import paramiko
+    except ImportError:
+        print("error: missing required dependency 'paramiko' for SFTP support. Install with 'pip install paramiko'", file=sys.stderr)
+        return 1
+    
+    key = paramiko.Ed25519Key.from_private_key_file("/home/almalinux/.ssh/fir_automation")
+    user = "kcor"
+    host = "robot.fir.alliancecan.ca"
+
+    ssh = paramiko.SSHClient()
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+
+    ssh.connect(hostname=host, username=user, pkey=key)
+
     engine = _build_runtime_engine()
     session_factory = get_session_factory(engine)
 
@@ -312,6 +327,7 @@ def main(argv: list[str] | None = None) -> int:
                     break
     finally:
         engine.dispose()
+        ssh.close()
 
     print(
         "Summary: "
