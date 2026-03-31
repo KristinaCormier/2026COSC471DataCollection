@@ -174,12 +174,12 @@ class MarketData5m(Base):
         nullable=False,
     )
 
-    open: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
-    high: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
-    low: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
-    close: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
+    open: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 6), nullable=True)
+    high: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 6), nullable=True)
+    low: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 6), nullable=True)
+    close: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 6), nullable=True)
 
-    volume: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    volume: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
 
     asset_type: Mapped[str] = mapped_column(Text, nullable=False)
 
