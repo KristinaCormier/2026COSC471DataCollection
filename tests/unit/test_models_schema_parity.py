@@ -1,4 +1,6 @@
 import pytest
+import ast
+from pathlib import Path
 from sqlalchemy import CheckConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 
@@ -24,16 +26,74 @@ def test_market_data_includes_staging_indexes():
     assert "idx_stg_raw_ingest_time" in index_names
 
 
-def test_market_data_5m_ohlc_columns_are_not_nullable():
+def test_market_data_5m_ohlcv_columns_are_nullable_for_lossless_transfer():
     # Given: the `MarketData5m` ORM table metadata.
-    # When: inspecting nullability on OHLC columns.
-    # Then: `open`, `high`, `low`, and `close` are all non-nullable.
+    # When: inspecting nullability on OHLCV columns.
+    # Then: the fields are nullable so rows are not dropped between layers.
 
     table = MarketData5m.__table__
-    assert table.c.open.nullable is False
-    assert table.c.high.nullable is False
-    assert table.c.low.nullable is False
-    assert table.c.close.nullable is False
+    assert table.c.open.nullable is True
+    assert table.c.high.nullable is True
+    assert table.c.low.nullable is True
+    assert table.c.close.nullable is True
+    assert table.c.volume.nullable is True
+
+
+def test_market_data_5m_migration_and_model_nullability_align():
+    # Given: baseline Alembic migration source and ORM model table metadata.
+    # When: reading migration AST for `core_dbms.market_data_5m` column nullability.
+    # Then: migration and model agree on nullability for critical OHLCV fields.
+
+    migration_path = (
+        Path(__file__).resolve().parents[2]
+        / "alembic"
+        / "versions"
+        / "20260312_0001_baseline_schema.py"
+    )
+    tree = ast.parse(migration_path.read_text())
+
+    captured_columns = {}
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        if not isinstance(node.func, ast.Attribute):
+            continue
+        if node.func.attr != "create_table":
+            continue
+        if not node.args or not isinstance(node.args[0], ast.Constant):
+            continue
+        if node.args[0].value != "market_data_5m":
+            continue
+
+        schema_kw = next((kw for kw in node.keywords if kw.arg == "schema"), None)
+        if schema_kw is None:
+            continue
+        if not isinstance(schema_kw.value, ast.Constant):
+            continue
+        if schema_kw.value.value != "core_dbms":
+            continue
+
+        for arg in node.args[1:]:
+            if not isinstance(arg, ast.Call):
+                continue
+            if not isinstance(arg.func, ast.Attribute):
+                continue
+            if arg.func.attr != "Column":
+                continue
+            if not arg.args or not isinstance(arg.args[0], ast.Constant):
+                continue
+
+            col_name = arg.args[0].value
+            nullable_kw = next((kw for kw in arg.keywords if kw.arg == "nullable"), None)
+            if nullable_kw and isinstance(nullable_kw.value, ast.Constant):
+                captured_columns[col_name] = nullable_kw.value.value
+
+    model_table = MarketData5m.__table__
+    columns_to_check = ["open", "high", "low", "close", "volume"]
+
+    for column_name in columns_to_check:
+        assert captured_columns[column_name] == model_table.c[column_name].nullable
 
 
 def test_pipeline_log_has_status_check_constraint_and_index():
