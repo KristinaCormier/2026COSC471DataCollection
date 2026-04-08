@@ -186,7 +186,7 @@ def main():
 
                 # Step 4: Insert into database
                 if rows:
-                     this_batch_size = _insert_batch(
+                    this_batch_size = _insert_batch(
                         session,
                         STAGING_TABLE_NAME,
                         rows,

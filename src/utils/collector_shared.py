@@ -363,15 +363,15 @@ def _log_ingestion_attempt(
     time_ingested: datetime
 ) -> bool:
     """Log an ingestion attempt to the database.""" 
-    stmt = insert(IngestionLog).values(
-        "symbol"=sym,
-        "start_date"=start,
-        "end_date"=end,
-        "rows_loaded"=this_batch_size,
-        "status"=status,
-        "error_msg"=error_message,
-        "logged_at"=time_ingested,
-    )
+    stmt = insert(IngestionLog).values({
+        "symbol" : sym,
+        "start_date" : start,
+        "end_date" : end,
+        "rows_loaded" : this_batch_size,
+        "status" : status,
+        "error_msg" : error_message,
+        "logged_at" : time_ingested,
+    })
     try:
         result = session.execute(stmt)
         session.commit()
