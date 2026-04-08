@@ -186,7 +186,7 @@ def main():
 
                 # Step 4: Insert into database
                 if rows:
-                    total += _insert_batch(
+                     this_batch_size = _insert_batch(
                         session,
                         STAGING_TABLE_NAME,
                         rows,
@@ -194,7 +194,10 @@ def main():
                         tz,
                         stop_on_conflict=True,
                     )
+                    total += this_batch_size
+                    _log_ingestion_attempt(session, sym, start, end, this_batch_size, "Success", "", now_local)
                 else:
+                    _log_ingestion_attempt(session,sym, start, end, this_batch_size, "Failure", "BATCH_INSERT_FAILURE", now_local)
                     print("(no 5 minute bars in this market session window)")
 
             except Exception as e:

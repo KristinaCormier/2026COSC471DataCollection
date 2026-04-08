@@ -351,3 +351,40 @@ def _insert_batch(
         print(f"inserted/upserted {inserted} rows into {staging_table_name}")
 
     return inserted
+
+def _log_ingestion_attempt(
+    session: Session,
+    sym: str,
+    start: datetime,
+    end: datetime,
+    this_batch_size: int,
+    status: str,
+    error_message: str,
+    time_ingested: datetime
+) -> bool:
+    """Log an ingestion attempt to the database.""" 
+    stmt = insert(IngestionLog).values(
+        "symbol"=sym,
+        "start_date"=start,
+        "end_date"=end,
+        "rows_loaded"=this_batch_size,
+        "status"=status,
+        "error_msg"=error_message,
+        "logged_at"=time_ingested,
+    )
+    try:
+        result = session.execute(stmt)
+        session.commit()
+    except Exception as e:
+        session.rollback()
+        lu.log_db_error(
+            symbol=sym,
+            operation="LOG_INGESTION_ATTEMPT",
+            error_type=type(e).__name__,
+            error_message=str(e),
+            table_name="ingestion_log",
+            row_count=1,
+            tz=tz,
+        )
+        print(f"failed to log ingestion attempt for {sym}: {e}", file=sys.stderr)
+        return False
