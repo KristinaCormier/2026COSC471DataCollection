@@ -4,7 +4,7 @@ name: Deploy Docs
   push:
     branches:
       - main
-      - feature/static-site-dev
+      - docs/static-site-dev
     paths:
       - README.md
       - docs/**
