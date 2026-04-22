@@ -2,6 +2,7 @@
 
 This directory contains the three operational entry points that drive the data pipeline, plus supporting modules for database access, validation, and logging.
 
+<!-- --8<-- [start:operational-entry-points] -->
 ## Operational Entry Points
 
 These are the main scripts that the system calls. All three are safe to run repeatedly; they upsert rather than insert.
@@ -121,7 +122,9 @@ python src/run_scheduled_operations.py
 **Critical Detail**: The pipeline executes in a **fixed, dependency-aware order**:
 1. `export_stg_to_core` — Dedup, validate, and export to core warehouse
 2. `truncate_stg_raw` — Clean up staging, but only after successful export
+<!-- --8<-- [end:operational-entry-points] -->
 
+<!-- --8<-- [start:supporting-modules] -->
 ## Supporting Modules
 
 You don't typically run these directly; they are imported by the entry-point scripts.
@@ -183,7 +186,9 @@ Shared utility modules imported by entry-point scripts.
   - `compute_window()` — Calculate 5-minute collection window from current time
   - `ymd()` — Format date as "YYYY-MM-DD"
   - Timezone-aware all the way
+<!-- --8<-- [end:supporting-modules] -->
 
+<!-- --8<-- [start:design-patterns] -->
 ## Design Patterns & Standards
 
 ### Upsert Strategy
@@ -212,7 +217,9 @@ Each row includes: symbol, timestamp, error type, error message, raw payload.
 ### Timezone Handling
 
 All times are timezone-aware. Market hours (`MARKET_OPEN`, `MARKET_CLOSE`) and time windows are in `MARKET_TZ`. Database timestamps use UTC.
+<!-- --8<-- [end:design-patterns] -->
 
+<!-- --8<-- [start:running-from-root] -->
 ## Running from the Repository Root
 
 Always run scripts from the repository root so imports and relative paths resolve correctly:
@@ -225,6 +232,7 @@ python src/intraday_data_collection.py
 cd src
 python intraday_data_collection.py
 ```
+<!-- --8<-- [end:running-from-root] -->
 
 ## See Also
 

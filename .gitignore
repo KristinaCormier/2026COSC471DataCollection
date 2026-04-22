@@ -58,6 +58,8 @@ Thumbs.db
 # --------------------
 *.tmp
 *.bak
+tmp-*.html
+Operational
 
 # --------------------
 # Jupyter 
@@ -71,6 +73,7 @@ build/
 dist/
 *.egg-info/
 .eggs/
+site/
 
 # --------------------
 # Database

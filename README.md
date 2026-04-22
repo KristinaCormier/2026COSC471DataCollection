@@ -2,6 +2,7 @@
 
 A production ETL system that ingests, transforms, and warehouses 5-minute OHLCV stock data from the Financial Modeling Prep (FMP) API into PostgreSQL, with built-in deduplication, quality checks, and operational observability.
 
+<!-- --8<-- [start:overview] -->
 ## Overview
 
 This repository implements a three-layer data pipeline:
@@ -31,9 +32,12 @@ FMP API
               ├─ pipeline_logs (execution status)
               └─ authority_conflicts
 ```
+<!-- --8<-- [end:overview] -->
 
+<!-- --8<-- [start:quick-start] -->
 ## Quick Start
 
+<!-- --8<-- [start:quick-start-core] -->
 ### 1. Install Dependencies
 ```bash
 python3 -m venv .venv
@@ -55,19 +59,23 @@ Required environment variables:
 - **Runtime**: `LOG_DIR`, `MARKET_OPEN`, `MARKET_CLOSE`
 
 Breaking change: runtime `PG*` connection keys were removed in favor of `DB_*` keys.
+<!-- --8<-- [end:quick-start-core] -->
 
 See [.env.template](.env.template) for all options.
 
+<!-- --8<-- [start:quick-start-setup-server] -->
 ### 3. Setup Server 
 
 ```bash
 cd setup_scripts/server_setup
 sudo bash setup_server.sh 
 ```
+<!-- --8<-- [end:quick-start-setup-server] -->
 
 For detailed setup instructions, see [setup_scripts/README.md](setup_scripts/README.md).
 and [One-Time Server Setup (`setup_server.sh`)](setup_scripts/server_setup/setup_server.sh)
 
+<!-- --8<-- [start:quick-start-initialize-db] -->
 ### 4. Initialize Database Schema
 ```bash
 # Navigate back to the project root
@@ -77,7 +85,9 @@ python -m alembic upgrade head
 # Convenience initializer for disposable local/test databases
 python -c "from dotenv import load_dotenv; from src.model.orm_db import build_postgres_url, get_engine, init_db; import os; load_dotenv(); init_db(get_engine(os.getenv('DB_HOST', 'localhost'), int(os.getenv('DB_PORT', '5432')), os.getenv('DB_NAME', 'market_data'), os.getenv('DB_USER', 'user'), os.getenv('DB_PASSWORD', 'password')))"
 ```
+<!-- --8<-- [end:quick-start-initialize-db] -->
 
+<!-- --8<-- [start:quick-start-cron-setup] -->
 ### 5.  Cron Setup
 Server cron jobs require privileged access.
 
@@ -86,7 +96,9 @@ Server cron jobs require privileged access.
 sudo bash setup_scripts/setup_cronjob_daily_collector.sh
 sudo bash setup_scripts/setup_cronjob_scheduled_operations.sh
 ```
+<!-- --8<-- [end:quick-start-cron-setup] -->
 
+<!-- --8<-- [start:quick-start-manual-testing] -->
 ### 6. Manual Testing
 ```bash
 pytest tests/unit/ -v
@@ -99,7 +111,10 @@ python src/gather_past_data.py --from-date 2026-02-01 --to-date 2026-02-07
 # Transform and load to the core schema
 python src/run_scheduled_operations.py
 ```
+<!-- --8<-- [end:quick-start-manual-testing] -->
+<!-- --8<-- [end:quick-start] -->
 
+<!-- --8<-- [start:operational-scripts] -->
 ## Operational Scripts
 
 Three entry points drive the pipeline:
@@ -126,9 +141,11 @@ Three entry points drive the pipeline:
 - **Output**: Rows in `core_dbms.market_data_5m` and audit logs in `operation_logs.*`
 - **Usage**: `python src/run_scheduled_operations.py`
 - **Logs**: Execution status written to `operation_logs.pipeline_logs`
+<!-- --8<-- [end:operational-scripts] -->
 
 For detailed usage, see [src/README.md](src/README.md).
 
+<!-- --8<-- [start:data-layers] -->
 ## Data Layers
 
 ### Staging Layer (`stg_raw` schema)
@@ -153,7 +170,9 @@ Audit trail for debugging and monitoring. Tables include:
 - **`cast_errors`**: Type conversion failures during ingestion
 
 See `src/model/models.py` and `alembic/versions/20260312_0001_baseline_schema.py` for the canonical table definitions.
+<!-- --8<-- [end:data-layers] -->
 
+<!-- --8<-- [start:configuration-reference] -->
 ## Configuration Reference
 
 ### Symbols & Timing
@@ -183,7 +202,9 @@ See `src/model/models.py` and `alembic/versions/20260312_0001_baseline_schema.py
 - **`LOG_LEVEL`**: Logging verbosity (default: `INFO`)
 - **`COLLECTION_SCHEDULE`**: Cron schedule for intraday collector (default: `0 * * * *` = hourly)
 - **`STG_TO_CORE_SCHEDULE`**: Cron schedule for transform job (default: `0 2 * * *` = 2 AM daily)
+<!-- --8<-- [end:configuration-reference] -->
 
+<!-- --8<-- [start:common-issues] -->
 ## Common Issues
 
 | Issue | Root Cause | Fix |
@@ -194,6 +215,7 @@ See `src/model/models.py` and `alembic/versions/20260312_0001_baseline_schema.py
 | `permission denied on sequence` | Database role lacks privileges | Grant sequence privileges to user in PostgreSQL |
 | `failed to provision testcontainers PostgreSQL` with `Permission denied` on `/var/run/docker.sock` | Current Linux user cannot access Docker daemon socket (not in `docker` group, or stale login session after group change) | Add user to docker group (`sudo usermod -aG docker "$USER"`), start a new login shell (`newgrp docker` or log out/in), then verify with `docker info` |
 | `Log directory is not writable` | `LOG_DIR` points to a protected location | Set `LOG_DIR` to a writable project-local path such as `./logs` |
+<!-- --8<-- [end:common-issues] -->
 
 ## Documentation Map
 
@@ -204,8 +226,10 @@ See `src/model/models.py` and `alembic/versions/20260312_0001_baseline_schema.py
 - **[tests/README.md](tests/README.md)**: Test organization, fixtures, and coverage reporting
 - **[.env.template](.env.template)**: Environment variable reference
 
+<!-- --8<-- [start:testing-summary] -->
 ## Testing
 
+<!-- --8<-- [start:testing-summary-main] -->
 Run the full test suite:
 ```bash
 pytest -v
@@ -231,26 +255,36 @@ With coverage:
 ```bash
 pytest --cov=src --cov-report=term-missing
 ```
+<!-- --8<-- [end:testing-summary-main] -->
 
 CI uses phase-aware jobs in `.github/workflows/pytest.yml`:
+<!-- --8<-- [start:testing-summary-ci-bullets] -->
 - Phase 1 unit checks are required on PR and merge queue.
 - Phase 2 integration and Phase 3 pipeline checks are informational on PR/push and required on merge queue.
+<!-- --8<-- [end:testing-summary-ci-bullets] -->
+<!-- --8<-- [end:testing-summary] -->
 
 See [tests/README.md](tests/README.md) for more options and fixture documentation.
 
+<!-- --8<-- [start:architecture-notes] -->
 ## Architecture & Design Notes
 
 - **Idempotency**: All three entry points are safe to run multiple times; they upsert rather than insert
 - **Dependency-aware pipeline execution**: `run_scheduled_operations.py` runs fixed Python steps in order and skips cleanup when export fails
 - **No external broker**: Execution is simple cron + database; no message queue or event system
 - **Observability**: All execution is logged to `operation_logs.pipeline_logs` and file-based error CSVs in `./logs/`
+<!-- --8<-- [end:architecture-notes] -->
 
+<!-- --8<-- [start:contributing] -->
 ## Contributing
 
+<!-- --8<-- [start:contributing-checklist] -->
 Before submitting a PR:
 1. Run `pytest` locally and ensure all tests pass
 2. Update documentation if you change schema, environment variables, or operational behavior
 3. Add tests for new data validation or Python pipeline transformation logic
 4. Keep error logging consistent with [src/utils/logging_utils.py](src/utils/logging_utils.py)
+<!-- --8<-- [end:contributing-checklist] -->
 
 See [.github/pull_request_template.md](.github/pull_request_template.md) for the required PR checklist.
+<!-- --8<-- [end:contributing] -->

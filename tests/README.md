@@ -5,6 +5,7 @@ This directory contains unit, integration, and pipeline tests for the data colle
 - Most unit tests are fast and do not require a database. A small PostgreSQL schema-parity subset is marked `postgres_only`.
 - Integration and pipeline tests require a PostgreSQL-compatible test database.
 
+<!-- --8<-- [start:test-organization] -->
 ## Test Organization
 
 - **`tests/unit/`**: Tests for data parsing, validation, date arithmetic, and API error handling. Most are database-free; `postgres_only` tests require PostgreSQL.
@@ -12,7 +13,9 @@ This directory contains unit, integration, and pipeline tests for the data colle
 - **`tests/pipeline/`**: End-to-end tests for the complete collection and transformation pipeline. Requires a test database and mock API.
 - **`tests/conftest.py`**: Shared pytest fixtures for database connections, project paths, and test utilities.
 - **`tests/data/`**: Static test data and fixtures (small CSV files, mock responses, etc.)
+<!-- --8<-- [end:test-organization] -->
 
+<!-- --8<-- [start:execution-tracks] -->
 ## Execution Tracks
 
 ### Unit-Only (Fast Local)
@@ -41,10 +44,13 @@ This directory contains unit, integration, and pipeline tests for the data colle
 - Commands:
     - `pytest tests/integration/ -v`
     - `pytest tests/pipeline/ -v`
+<!-- --8<-- [end:execution-tracks] -->
 
+<!-- --8<-- [start:shared-fixtures] -->
 ## Shared Fixtures
 
 All fixtures are defined in [conftest.py](conftest.py) and available globally:
+<!-- --8<-- [start:shared-fixtures-body] -->
 
 **Session-Scoped** (initialized once per test run):
 - `project_root`: Path to the repository root directory
@@ -59,7 +65,10 @@ All fixtures are defined in [conftest.py](conftest.py) and available globally:
 **Utilities**:
 - `FakeResponse`: Mock HTTP response for API call testing
 - `FakeCursor`: Legacy mock database cursor (for older tests)
+<!-- --8<-- [end:shared-fixtures-body] -->
+<!-- --8<-- [end:shared-fixtures] -->
 
+<!-- --8<-- [start:test-setup] -->
 ## Setup
 
 ### Prerequisites
@@ -112,7 +121,9 @@ psql "${TEST_DATABASE_URL/postgresql+psycopg/postgresql}" -c "SELECT 1"
 
 # Or let pytest initialize schemas/tables on first run (if the test user has permissions)
 ```
+<!-- --8<-- [end:test-setup] -->
 
+<!-- --8<-- [start:running-tests] -->
 ## Running Tests
 
 ### Quick Test
@@ -206,10 +217,13 @@ pytest
 export $(cat .env | xargs)
 pytest
 ```
+<!-- --8<-- [end:running-tests] -->
 
+<!-- --8<-- [start:continuous-integration] -->
 ## Continuous Integration
 
 Tests are automatically run on pull requests, pushes to `main` and `dev`, and merge queue runs via [.github/workflows/pytest.yml](../.github/workflows/pytest.yml).
+<!-- --8<-- [start:continuous-integration-body] -->
 
 **CI Phase Jobs**:
 1. **Phase 1 Unit Tests**: DB-free unit suite with 90% coverage gate for unit-owned modules. Required for PR and merge queue.
@@ -248,13 +262,18 @@ pytest tests/pipeline/ -v -m pipeline \
     --cov-report=term-missing \
     --cov-fail-under=90
 ```
+<!-- --8<-- [end:continuous-integration-body] -->
+<!-- --8<-- [end:continuous-integration] -->
 
+<!-- --8<-- [start:naming-conventions] -->
 ## Naming Conventions
 
 - **Test files**: `test_<module>.py` (e.g., `test_intraday_data_collection.py`)
 - **Test functions**: `test_<function>_<scenario>` (e.g., `test_parse_iso_date_accepts_valid_value`)
 - **Fixtures**: PascalCase (e.g., `FakeResponse`, `FakeCursor`)
+<!-- --8<-- [end:naming-conventions] -->
 
+<!-- --8<-- [start:test-common-issues] -->
 ## Common Issues
 
 | Problem | Solution |
@@ -266,7 +285,9 @@ pytest tests/pipeline/ -v -m pipeline \
 | Tests are unexpectedly using an external DB | Clear `TEST_DATABASE_URL` (empty/unset) to force containerized DB-backed tests |
 | Fixtures not found | Ensure `tests/conftest.py` exists; pytest auto-discovers it |
 | Slow tests | Tests are isolated per function; `db_connection` rolls back after each test for clean state |
+<!-- --8<-- [end:test-common-issues] -->
 
+<!-- --8<-- [start:adding-tests] -->
 ## Adding New Tests
 
 ### Unit Test Template
@@ -314,6 +335,7 @@ def test_insert_batch_upserts_existing_rows(db_session: Session):
     updated = db_session.query(MarketData).filter_by(symbol="AAPL").one()
     assert updated.close == 151.0
 ```
+<!-- --8<-- [end:adding-tests] -->
 
 ## See Also
 

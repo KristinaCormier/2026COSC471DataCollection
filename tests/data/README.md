@@ -1,8 +1,10 @@
 ## Purpose
+<!-- --8<-- [start:summary] -->
 Store small, deterministic datasets used by tests (CSV/Parquet). Keep them tiny
 so tests stay fast and repeatable.
 
-## Examples
+**Examples**
 - Minimal price history snapshots
 - Feature-engineering input samples
 - Expected output fixtures
+<!-- --8<-- [end:summary] -->

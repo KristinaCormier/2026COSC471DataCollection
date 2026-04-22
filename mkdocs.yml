@@ -1,0 +1,31 @@
+site_name: COSC471 Data Collection
+site_description: Documentation for the 5-minute market data collection pipeline
+repo_name: 2026COSC471DataCollection
+docs_dir: docs
+site_dir: site
+watch:
+  - README.md
+  - src
+  - tests
+  - setup_scripts
+theme:
+  name: mkdocs
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - Users Guide: users-guide.md
+  - Developers Guide: developers-guide.md
+  - Configuration Management: configuration-management.md
+  - Operations: operations.md
+markdown_extensions:
+  - admonition
+  - pymdownx.snippets:
+      base_path:
+        - .
+      check_paths: true
+  - tables
+  - toc:
+      permalink: true
+validation:
+  links:
+    not_found: ignore

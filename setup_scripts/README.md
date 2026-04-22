@@ -11,6 +11,7 @@ For local developer onboarding, prefer the root [README quick start](../README.m
 
 ---
 
+<!-- --8<-- [start:one-time-server-setup] -->
 ## One-Time Server Setup (`setup_server.sh`)
 
 **Purpose**: Configure production servers with privileged users, set up physical streaming replication, and enable automated backups.
@@ -58,9 +59,11 @@ psql -c "SELECT slot_name, active FROM pg_replication_slots;"
 # Check backup directory
 ls -ld "${BACKUP_DIR}"
 ```
+<!-- --8<-- [end:one-time-server-setup] -->
 
 ---
 
+<!-- --8<-- [start:component-setup-procedures] -->
 ## Component Setup Procedures
 
 ### Database Replication (`database_setup/db_migration.sh`)
@@ -135,9 +138,11 @@ sudo -u postgres psql -c "SHOW archive_mode;"
 # Check the cron job was registered
 sudo crontab -l | grep backup_database
 ```
+<!-- --8<-- [end:component-setup-procedures] -->
 
 ---
 
+<!-- --8<-- [start:cron-job-installation] -->
 ## Cron Job Installation
 
 Two separate cron scripts install the data collection and transformation pipelines.
@@ -232,9 +237,11 @@ sudo cat /etc/cron.d/scheduled_operations
 # Check logs directory permissions
 ls -ld ./logs
 ```
+<!-- --8<-- [end:cron-job-installation] -->
 
 ---
 
+<!-- --8<-- [start:manual-utilities] -->
 ## Manual Utilities
 
 ### CSV Bulk Load (`src/historical_csv_data_load.py`)
@@ -272,9 +279,11 @@ python src/historical_csv_data_load.py --csv-dir /path/to/csv/files
 # Count rows loaded per symbol
 psql -d "$DB_NAME" -c "SELECT symbol, COUNT(*) FROM stg_raw.market_data WHERE source = 'CSV_bulk_load' GROUP BY symbol ORDER BY symbol;"
 ```
+<!-- --8<-- [end:manual-utilities] -->
 
 ---
 
+<!-- --8<-- [start:environment-variables-reference] -->
 ## Environment Variables Reference
 
 ### Server Setup
@@ -323,9 +332,11 @@ DB_NAME="market_data"
 DB_USER="etl_user"
 DB_PASSWORD="your_password"
 ```
+<!-- --8<-- [end:environment-variables-reference] -->
 
 ---
 
+<!-- --8<-- [start:typical-setup-flow] -->
 ## Typical Setup Flow
 
 For a complete production deployment:
@@ -353,9 +364,11 @@ crontab -l
 # 6. Optionally load historical data
 python ../src/historical_csv_data_load.py --csv-dir /path/to/csv/files
 ```
+<!-- --8<-- [end:typical-setup-flow] -->
 
 ---
 
+<!-- --8<-- [start:setup-troubleshooting] -->
 ## Troubleshooting
 
 | Issue | Check | Fix |
@@ -366,6 +379,7 @@ python ../src/historical_csv_data_load.py --csv-dir /path/to/csv/files
 | CSV import fails | Check CSV column names and types | Ensure columns are: `date, open, high, low, close, volume` and all numeric values parse as valid decimals |
 | Timestamps appear shifted to server local time | `psql -c "SHOW TIMEZONE;"` returns an unexpected value | Set DB/session timezone explicitly (commonly UTC): `ALTER DATABASE <db_name> SET TIMEZONE TO 'UTC';`. For display in market time, use `AT TIME ZONE 'America/New_York'`. |
 | Permission denied on user creation | Check `/etc/sudoers` | Only run `setup_server.sh` as root or with sudo; don't use it in a restricted shell |
+<!-- --8<-- [end:setup-troubleshooting] -->
 
 ---
 
